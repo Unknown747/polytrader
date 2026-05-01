@@ -18,13 +18,16 @@ tags:
     description: Trade orders
   - name: portfolio
     description: Portfolio summary and stats
+  - name: strategy
+    description: Trading strategy and opportunity scanner
+  - name: wallet
+    description: Wallet and credentials management
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -80,6 +83,21 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Market"
+
+  /markets/trending:
+    get:
+      operationId: getTrendingMarkets
+      tags: [markets]
+      summary: Get trending markets by volume
+      responses:
+        "200":
+          description: Trending markets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Market"
 
   /positions:
     get:
@@ -175,20 +193,33 @@ paths:
                 items:
                   $ref: "#/components/schemas/PnlPoint"
 
-  /markets/trending:
+  /strategy/opportunities:
     get:
-      operationId: getTrendingMarkets
-      tags: [markets]
-      summary: Get trending markets by volume
+      operationId: getOpportunities
+      tags: [strategy]
+      summary: Get trading opportunities based on strategy scanner
       responses:
         "200":
-          description: Trending markets
+          description: List of trading opportunities
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/Market"
+                  $ref: "#/components/schemas/Opportunity"
+
+  /wallet/status:
+    get:
+      operationId: getWalletStatus
+      tags: [wallet]
+      summary: Get wallet connection status and balance
+      responses:
+        "200":
+          description: Wallet status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletStatus"
 
 components:
   schemas:
@@ -221,6 +252,9 @@ components:
         volume:
           type: number
           format: float
+        volume24h:
+          type: number
+          format: float
         liquidity:
           type: number
           format: float
@@ -232,6 +266,10 @@ components:
           nullable: true
         description:
           type: string
+        conditionId:
+          type: string
+        tokenId:
+          type: string
       required:
         - id
         - question
@@ -240,6 +278,7 @@ components:
         - yesPrice
         - noPrice
         - volume
+        - volume24h
         - liquidity
         - endDate
 
@@ -382,3 +421,79 @@ components:
         - date
         - pnl
         - cumulative
+
+    Opportunity:
+      type: object
+      properties:
+        marketId:
+          type: string
+        question:
+          type: string
+        category:
+          type: string
+        recommendedSide:
+          type: string
+          enum: [YES, NO]
+        currentPrice:
+          type: number
+        estimatedFairValue:
+          type: number
+        edge:
+          type: number
+        expectedReturn:
+          type: number
+        kellyFraction:
+          type: number
+        suggestedAmount:
+          type: number
+        riskLevel:
+          type: string
+          enum: [low, medium, high]
+        daysToResolution:
+          type: number
+        volume24h:
+          type: number
+        rationale:
+          type: string
+        conditionId:
+          type: string
+      required:
+        - marketId
+        - question
+        - category
+        - recommendedSide
+        - currentPrice
+        - estimatedFairValue
+        - edge
+        - expectedReturn
+        - kellyFraction
+        - suggestedAmount
+        - riskLevel
+        - daysToResolution
+        - volume24h
+        - rationale
+
+    WalletStatus:
+      type: object
+      properties:
+        connected:
+          type: boolean
+        address:
+          type: string
+          nullable: true
+        usdcBalance:
+          type: number
+        hasApiCredentials:
+          type: boolean
+        network:
+          type: string
+        dataSource:
+          type: string
+          enum: [live, demo]
+      required:
+        - connected
+        - address
+        - usdcBalance
+        - hasApiCredentials
+        - network
+        - dataSource

@@ -15,8 +15,11 @@ export interface Market {
   yesPrice: number;
   noPrice: number;
   volume: number;
+  volume24h: number;
   liquidity: number;
   endDate: Date;
   resolvedOutcome?: string | null;
   description?: string;
+  conditionId?: string;
+  tokenId?: string;
 }

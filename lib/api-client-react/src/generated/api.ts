@@ -20,11 +20,13 @@ import type {
   HealthStatus,
   ListMarketsParams,
   Market,
+  Opportunity,
   Order,
   PlaceOrderRequest,
   PnlPoint,
   PortfolioSummary,
   Position,
+  WalletStatus,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -37,7 +39,6 @@ type Awaited<O> = O extends AwaitedInput<infer T> ? T : never;
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 /**
- * Returns server health status
  * @summary Health check
  */
 export const getHealthCheckUrl = () => {
@@ -283,6 +284,81 @@ export function useGetMarket<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetMarketQueryOptions(marketId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get trending markets by volume
+ */
+export const getGetTrendingMarketsUrl = () => {
+  return `/api/markets/trending`;
+};
+
+export const getTrendingMarkets = async (
+  options?: RequestInit,
+): Promise<Market[]> => {
+  return customFetch<Market[]>(getGetTrendingMarketsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetTrendingMarketsQueryKey = () => {
+  return [`/api/markets/trending`] as const;
+};
+
+export const getGetTrendingMarketsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTrendingMarkets>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTrendingMarkets>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetTrendingMarketsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getTrendingMarkets>>
+  > = ({ signal }) => getTrendingMarkets({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTrendingMarkets>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTrendingMarketsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTrendingMarkets>>
+>;
+export type GetTrendingMarketsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get trending markets by volume
+ */
+
+export function useGetTrendingMarkets<
+  TData = Awaited<ReturnType<typeof getTrendingMarkets>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTrendingMarkets>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTrendingMarketsQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -760,31 +836,31 @@ export function useGetPortfolioPnl<
 }
 
 /**
- * @summary Get trending markets by volume
+ * @summary Get trading opportunities based on strategy scanner
  */
-export const getGetTrendingMarketsUrl = () => {
-  return `/api/markets/trending`;
+export const getGetOpportunitiesUrl = () => {
+  return `/api/strategy/opportunities`;
 };
 
-export const getTrendingMarkets = async (
+export const getOpportunities = async (
   options?: RequestInit,
-): Promise<Market[]> => {
-  return customFetch<Market[]>(getGetTrendingMarketsUrl(), {
+): Promise<Opportunity[]> => {
+  return customFetch<Opportunity[]>(getGetOpportunitiesUrl(), {
     ...options,
     method: "GET",
   });
 };
 
-export const getGetTrendingMarketsQueryKey = () => {
-  return [`/api/markets/trending`] as const;
+export const getGetOpportunitiesQueryKey = () => {
+  return [`/api/strategy/opportunities`] as const;
 };
 
-export const getGetTrendingMarketsQueryOptions = <
-  TData = Awaited<ReturnType<typeof getTrendingMarkets>>,
+export const getGetOpportunitiesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getOpportunities>>,
   TError = ErrorType<unknown>,
 >(options?: {
   query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getTrendingMarkets>>,
+    Awaited<ReturnType<typeof getOpportunities>>,
     TError,
     TData
   >;
@@ -792,40 +868,115 @@ export const getGetTrendingMarketsQueryOptions = <
 }) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getGetTrendingMarketsQueryKey();
+  const queryKey = queryOptions?.queryKey ?? getGetOpportunitiesQueryKey();
 
   const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof getTrendingMarkets>>
-  > = ({ signal }) => getTrendingMarkets({ signal, ...requestOptions });
+    Awaited<ReturnType<typeof getOpportunities>>
+  > = ({ signal }) => getOpportunities({ signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof getTrendingMarkets>>,
+    Awaited<ReturnType<typeof getOpportunities>>,
     TError,
     TData
   > & { queryKey: QueryKey };
 };
 
-export type GetTrendingMarketsQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getTrendingMarkets>>
+export type GetOpportunitiesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getOpportunities>>
 >;
-export type GetTrendingMarketsQueryError = ErrorType<unknown>;
+export type GetOpportunitiesQueryError = ErrorType<unknown>;
 
 /**
- * @summary Get trending markets by volume
+ * @summary Get trading opportunities based on strategy scanner
  */
 
-export function useGetTrendingMarkets<
-  TData = Awaited<ReturnType<typeof getTrendingMarkets>>,
+export function useGetOpportunities<
+  TData = Awaited<ReturnType<typeof getOpportunities>>,
   TError = ErrorType<unknown>,
 >(options?: {
   query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getTrendingMarkets>>,
+    Awaited<ReturnType<typeof getOpportunities>>,
     TError,
     TData
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetTrendingMarketsQueryOptions(options);
+  const queryOptions = getGetOpportunitiesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get wallet connection status and balance
+ */
+export const getGetWalletStatusUrl = () => {
+  return `/api/wallet/status`;
+};
+
+export const getWalletStatus = async (
+  options?: RequestInit,
+): Promise<WalletStatus> => {
+  return customFetch<WalletStatus>(getGetWalletStatusUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetWalletStatusQueryKey = () => {
+  return [`/api/wallet/status`] as const;
+};
+
+export const getGetWalletStatusQueryOptions = <
+  TData = Awaited<ReturnType<typeof getWalletStatus>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getWalletStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetWalletStatusQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getWalletStatus>>> = ({
+    signal,
+  }) => getWalletStatus({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getWalletStatus>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetWalletStatusQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getWalletStatus>>
+>;
+export type GetWalletStatusQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get wallet connection status and balance
+ */
+
+export function useGetWalletStatus<
+  TData = Awaited<ReturnType<typeof getWalletStatus>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getWalletStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetWalletStatusQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

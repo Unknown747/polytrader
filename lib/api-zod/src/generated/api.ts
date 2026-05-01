@@ -8,7 +8,6 @@
 import * as zod from "zod";
 
 /**
- * Returns server health status
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({
@@ -32,10 +31,13 @@ export const ListMarketsResponseItem = zod.object({
   yesPrice: zod.number(),
   noPrice: zod.number(),
   volume: zod.number(),
+  volume24h: zod.number(),
   liquidity: zod.number(),
   endDate: zod.coerce.date(),
   resolvedOutcome: zod.string().nullish(),
   description: zod.string().optional(),
+  conditionId: zod.string().optional(),
+  tokenId: zod.string().optional(),
 });
 export const ListMarketsResponse = zod.array(ListMarketsResponseItem);
 
@@ -54,11 +56,37 @@ export const GetMarketResponse = zod.object({
   yesPrice: zod.number(),
   noPrice: zod.number(),
   volume: zod.number(),
+  volume24h: zod.number(),
   liquidity: zod.number(),
   endDate: zod.coerce.date(),
   resolvedOutcome: zod.string().nullish(),
   description: zod.string().optional(),
+  conditionId: zod.string().optional(),
+  tokenId: zod.string().optional(),
 });
+
+/**
+ * @summary Get trending markets by volume
+ */
+export const GetTrendingMarketsResponseItem = zod.object({
+  id: zod.string(),
+  question: zod.string(),
+  category: zod.string(),
+  status: zod.enum(["active", "resolved", "closed"]),
+  yesPrice: zod.number(),
+  noPrice: zod.number(),
+  volume: zod.number(),
+  volume24h: zod.number(),
+  liquidity: zod.number(),
+  endDate: zod.coerce.date(),
+  resolvedOutcome: zod.string().nullish(),
+  description: zod.string().optional(),
+  conditionId: zod.string().optional(),
+  tokenId: zod.string().optional(),
+});
+export const GetTrendingMarketsResponse = zod.array(
+  GetTrendingMarketsResponseItem,
+);
 
 /**
  * @summary List user positions
@@ -150,21 +178,35 @@ export const GetPortfolioPnlResponseItem = zod.object({
 export const GetPortfolioPnlResponse = zod.array(GetPortfolioPnlResponseItem);
 
 /**
- * @summary Get trending markets by volume
+ * @summary Get trading opportunities based on strategy scanner
  */
-export const GetTrendingMarketsResponseItem = zod.object({
-  id: zod.string(),
+export const GetOpportunitiesResponseItem = zod.object({
+  marketId: zod.string(),
   question: zod.string(),
   category: zod.string(),
-  status: zod.enum(["active", "resolved", "closed"]),
-  yesPrice: zod.number(),
-  noPrice: zod.number(),
-  volume: zod.number(),
-  liquidity: zod.number(),
-  endDate: zod.coerce.date(),
-  resolvedOutcome: zod.string().nullish(),
-  description: zod.string().optional(),
+  recommendedSide: zod.enum(["YES", "NO"]),
+  currentPrice: zod.number(),
+  estimatedFairValue: zod.number(),
+  edge: zod.number(),
+  expectedReturn: zod.number(),
+  kellyFraction: zod.number(),
+  suggestedAmount: zod.number(),
+  riskLevel: zod.enum(["low", "medium", "high"]),
+  daysToResolution: zod.number(),
+  volume24h: zod.number(),
+  rationale: zod.string(),
+  conditionId: zod.string().optional(),
 });
-export const GetTrendingMarketsResponse = zod.array(
-  GetTrendingMarketsResponseItem,
-);
+export const GetOpportunitiesResponse = zod.array(GetOpportunitiesResponseItem);
+
+/**
+ * @summary Get wallet connection status and balance
+ */
+export const GetWalletStatusResponse = zod.object({
+  connected: zod.boolean(),
+  address: zod.string().nullable(),
+  usdcBalance: zod.number(),
+  hasApiCredentials: zod.boolean(),
+  network: zod.string(),
+  dataSource: zod.enum(["live", "demo"]),
+});

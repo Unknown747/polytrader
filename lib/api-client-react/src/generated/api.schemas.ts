@@ -25,10 +25,13 @@ export interface Market {
   yesPrice: number;
   noPrice: number;
   volume: number;
+  volume24h: number;
   liquidity: number;
   endDate: string;
   resolvedOutcome?: string | null;
   description?: string;
+  conditionId?: string;
+  tokenId?: string;
 }
 
 export type PositionSide = (typeof PositionSide)[keyof typeof PositionSide];
@@ -126,6 +129,58 @@ export interface PnlPoint {
   date: string;
   pnl: number;
   cumulative: number;
+}
+
+export type OpportunityRecommendedSide =
+  (typeof OpportunityRecommendedSide)[keyof typeof OpportunityRecommendedSide];
+
+export const OpportunityRecommendedSide = {
+  YES: "YES",
+  NO: "NO",
+} as const;
+
+export type OpportunityRiskLevel =
+  (typeof OpportunityRiskLevel)[keyof typeof OpportunityRiskLevel];
+
+export const OpportunityRiskLevel = {
+  low: "low",
+  medium: "medium",
+  high: "high",
+} as const;
+
+export interface Opportunity {
+  marketId: string;
+  question: string;
+  category: string;
+  recommendedSide: OpportunityRecommendedSide;
+  currentPrice: number;
+  estimatedFairValue: number;
+  edge: number;
+  expectedReturn: number;
+  kellyFraction: number;
+  suggestedAmount: number;
+  riskLevel: OpportunityRiskLevel;
+  daysToResolution: number;
+  volume24h: number;
+  rationale: string;
+  conditionId?: string;
+}
+
+export type WalletStatusDataSource =
+  (typeof WalletStatusDataSource)[keyof typeof WalletStatusDataSource];
+
+export const WalletStatusDataSource = {
+  live: "live",
+  demo: "demo",
+} as const;
+
+export interface WalletStatus {
+  connected: boolean;
+  address: string | null;
+  usdcBalance: number;
+  hasApiCredentials: boolean;
+  network: string;
+  dataSource: WalletStatusDataSource;
 }
 
 export type ListMarketsParams = {
