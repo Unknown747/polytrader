@@ -104,12 +104,14 @@ router.get("/auto-trading/history", (_req, res) => {
 });
 
 router.post("/auto-trading/trigger", (_req, res) => {
-  if (!isClobConfigured()) {
-    res.status(400).json({ success: false, message: "Polymarket CLOB credentials not configured." });
+  const config = getConfig();
+  const paperMode = (config as unknown as Record<string, unknown>).paperTradingMode as boolean | undefined;
+  if (!isClobConfigured() && !paperMode) {
+    res.status(400).json({ success: false, message: "Polymarket CLOB credentials not configured. Enable Paper Trading mode to scan without credentials." });
     return;
   }
   triggerManualScan();
-  res.json({ success: true, message: "Manual scan and auto-trading cycle triggered." });
+  res.json({ success: true, message: paperMode ? "Paper trading scan triggered." : "Manual scan and auto-trading cycle triggered." });
 });
 
 // ─── Kelly Calculator ───────────────────────────────────────────────────────
