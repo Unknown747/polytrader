@@ -9,6 +9,9 @@ import MarketDetail from "@/pages/MarketDetail";
 import Positions from "@/pages/Positions";
 import Orders from "@/pages/Orders";
 import Portfolio from "@/pages/Portfolio";
+import Strategy from "@/pages/Strategy";
+import Backtest from "@/pages/Backtest";
+import Settings from "@/pages/Settings";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -30,6 +33,9 @@ function Router() {
         <Route path="/positions" component={Positions} />
         <Route path="/orders" component={Orders} />
         <Route path="/portfolio" component={Portfolio} />
+        <Route path="/strategy" component={Strategy} />
+        <Route path="/backtest" component={Backtest} />
+        <Route path="/settings" component={Settings} />
         <Route component={NotFound} />
       </Switch>
     </AppLayout>

@@ -42,6 +42,29 @@ export const ListMarketsResponseItem = zod.object({
 export const ListMarketsResponse = zod.array(ListMarketsResponseItem);
 
 /**
+ * @summary Get trending markets by volume
+ */
+export const GetTrendingMarketsResponseItem = zod.object({
+  id: zod.string(),
+  question: zod.string(),
+  category: zod.string(),
+  status: zod.enum(["active", "resolved", "closed"]),
+  yesPrice: zod.number(),
+  noPrice: zod.number(),
+  volume: zod.number(),
+  volume24h: zod.number(),
+  liquidity: zod.number(),
+  endDate: zod.coerce.date(),
+  resolvedOutcome: zod.string().nullish(),
+  description: zod.string().optional(),
+  conditionId: zod.string().optional(),
+  tokenId: zod.string().optional(),
+});
+export const GetTrendingMarketsResponse = zod.array(
+  GetTrendingMarketsResponseItem,
+);
+
+/**
  * @summary Get market details
  */
 export const GetMarketParams = zod.object({
@@ -64,29 +87,6 @@ export const GetMarketResponse = zod.object({
   conditionId: zod.string().optional(),
   tokenId: zod.string().optional(),
 });
-
-/**
- * @summary Get trending markets by volume
- */
-export const GetTrendingMarketsResponseItem = zod.object({
-  id: zod.string(),
-  question: zod.string(),
-  category: zod.string(),
-  status: zod.enum(["active", "resolved", "closed"]),
-  yesPrice: zod.number(),
-  noPrice: zod.number(),
-  volume: zod.number(),
-  volume24h: zod.number(),
-  liquidity: zod.number(),
-  endDate: zod.coerce.date(),
-  resolvedOutcome: zod.string().nullish(),
-  description: zod.string().optional(),
-  conditionId: zod.string().optional(),
-  tokenId: zod.string().optional(),
-});
-export const GetTrendingMarketsResponse = zod.array(
-  GetTrendingMarketsResponseItem,
-);
 
 /**
  * @summary List user positions
@@ -168,7 +168,7 @@ export const GetPortfolioSummaryResponse = zod.object({
 });
 
 /**
- * @summary Get P&L history over time
+ * @summary Get P&L history
  */
 export const GetPortfolioPnlResponseItem = zod.object({
   date: zod.string(),
@@ -178,7 +178,7 @@ export const GetPortfolioPnlResponseItem = zod.object({
 export const GetPortfolioPnlResponse = zod.array(GetPortfolioPnlResponseItem);
 
 /**
- * @summary Get trading opportunities based on strategy scanner
+ * @summary Get trading opportunities from scanner
  */
 export const GetOpportunitiesResponseItem = zod.object({
   marketId: zod.string(),
@@ -200,7 +200,95 @@ export const GetOpportunitiesResponseItem = zod.object({
 export const GetOpportunitiesResponse = zod.array(GetOpportunitiesResponseItem);
 
 /**
- * @summary Get wallet connection status and balance
+ * @summary Get auto-trading configuration
+ */
+export const GetStrategyConfigResponse = zod.object({
+  autoTradingEnabled: zod.boolean(),
+  bankroll: zod.number(),
+  maxPositionPct: zod.number(),
+  minEdge: zod.number(),
+  minProbability: zod.number(),
+  maxDaysToResolution: zod.number(),
+  minVolume24h: zod.number(),
+  scanIntervalMinutes: zod.number(),
+  telegramAlertsEnabled: zod.boolean(),
+  maxDailyTrades: zod.number(),
+});
+
+/**
+ * @summary Update auto-trading configuration
+ */
+export const UpdateStrategyConfigBody = zod.object({
+  autoTradingEnabled: zod.boolean(),
+  bankroll: zod.number(),
+  maxPositionPct: zod.number(),
+  minEdge: zod.number(),
+  minProbability: zod.number(),
+  maxDaysToResolution: zod.number(),
+  minVolume24h: zod.number(),
+  scanIntervalMinutes: zod.number(),
+  telegramAlertsEnabled: zod.boolean(),
+  maxDailyTrades: zod.number(),
+});
+
+export const UpdateStrategyConfigResponse = zod.object({
+  autoTradingEnabled: zod.boolean(),
+  bankroll: zod.number(),
+  maxPositionPct: zod.number(),
+  minEdge: zod.number(),
+  minProbability: zod.number(),
+  maxDaysToResolution: zod.number(),
+  minVolume24h: zod.number(),
+  scanIntervalMinutes: zod.number(),
+  telegramAlertsEnabled: zod.boolean(),
+  maxDailyTrades: zod.number(),
+});
+
+/**
+ * @summary Run strategy backtest on historical data
+ */
+export const RunBacktestBody = zod.object({
+  daysBack: zod.number(),
+  bankroll: zod.number(),
+  minProbability: zod.number(),
+  maxDaysToResolution: zod.number(),
+  maxPositionPct: zod.number(),
+});
+
+export const RunBacktestResponse = zod.object({
+  totalReturn: zod.number(),
+  totalReturnPct: zod.number(),
+  winRate: zod.number(),
+  totalTrades: zod.number(),
+  winningTrades: zod.number(),
+  losingTrades: zod.number(),
+  avgReturn: zod.number(),
+  maxDrawdown: zod.number(),
+  sharpeRatio: zod.number(),
+  trades: zod.array(
+    zod.object({
+      date: zod.string(),
+      question: zod.string(),
+      side: zod.enum(["YES", "NO"]),
+      entryPrice: zod.number(),
+      exitPrice: zod.number(),
+      amount: zod.number(),
+      pnl: zod.number(),
+      pnlPct: zod.number(),
+      outcome: zod.enum(["win", "loss"]),
+    }),
+  ),
+  equityCurve: zod.array(
+    zod.object({
+      date: zod.string(),
+      pnl: zod.number(),
+      cumulative: zod.number(),
+    }),
+  ),
+});
+
+/**
+ * @summary Get wallet connection status
  */
 export const GetWalletStatusResponse = zod.object({
   connected: zod.boolean(),
@@ -209,4 +297,13 @@ export const GetWalletStatusResponse = zod.object({
   hasApiCredentials: zod.boolean(),
   network: zod.string(),
   dataSource: zod.enum(["live", "demo"]),
+  telegramConfigured: zod.boolean(),
+});
+
+/**
+ * @summary Send a test Telegram notification
+ */
+export const TestTelegramResponse = zod.object({
+  success: zod.boolean(),
+  message: zod.string(),
 });

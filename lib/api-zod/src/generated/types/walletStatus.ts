@@ -14,4 +14,5 @@ export interface WalletStatus {
   hasApiCredentials: boolean;
   network: string;
   dataSource: WalletStatusDataSource;
+  telegramConfigured: boolean;
 }

@@ -6,8 +6,12 @@ import {
   ClipboardList,
   BarChart3,
   Activity,
+  Zap,
+  FlaskConical,
+  Settings2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useGetWalletStatus } from "@workspace/api-client-react";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -15,10 +19,15 @@ const NAV_ITEMS = [
   { href: "/positions", label: "Positions", icon: Wallet },
   { href: "/orders", label: "Orders", icon: ClipboardList },
   { href: "/portfolio", label: "Portfolio", icon: BarChart3 },
+  { href: "/strategy", label: "Strategy", icon: Zap },
+  { href: "/backtest", label: "Backtest", icon: FlaskConical },
+  { href: "/settings", label: "Settings", icon: Settings2 },
 ];
 
 export function Sidebar() {
   const [location] = useLocation();
+  const { data: wallet } = useGetWalletStatus();
+  const isLive = wallet?.dataSource === "live";
 
   return (
     <aside className="w-56 shrink-0 border-r border-border bg-sidebar flex flex-col h-screen sticky top-0">
@@ -27,12 +36,19 @@ export function Sidebar() {
         <span className="font-bold text-base tracking-tight text-foreground">
           PolyTrader
         </span>
-        <span className="ml-auto text-[10px] font-medium px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">
-          DEMO
+        <span
+          className={cn(
+            "ml-auto text-[10px] font-medium px-1.5 py-0.5 rounded border",
+            isLive
+              ? "bg-yes/20 text-yes border-yes/30"
+              : "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
+          )}
+        >
+          {isLive ? "LIVE" : "DEMO"}
         </span>
       </div>
 
-      <nav className="flex-1 px-3 py-4 space-y-0.5">
+      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
         {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
           const isActive = location === href;
           return (
@@ -56,10 +72,17 @@ export function Sidebar() {
 
       <div className="px-4 py-4 border-t border-border">
         <div className="text-xs text-muted-foreground">
-          <div className="font-medium text-foreground mb-1">Mainnet Mode</div>
+          <div className="font-medium text-foreground mb-1">
+            {isLive ? "Polygon Mainnet" : "Demo Mode"}
+          </div>
           <div className="flex items-center gap-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-yellow-400 animate-pulse" />
-            Using fake data
+            <span
+              className={cn(
+                "h-1.5 w-1.5 rounded-full animate-pulse",
+                isLive ? "bg-yes" : "bg-yellow-400"
+              )}
+            />
+            {isLive ? "Live Polymarket data" : "Using demo data"}
           </div>
         </div>
       </div>

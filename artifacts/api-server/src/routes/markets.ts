@@ -6,191 +6,240 @@ import {
   GetMarketResponse,
   GetTrendingMarketsResponse,
 } from "@workspace/api-zod";
+import { getCachedMarkets, fetchMarketById, normalizeMarket } from "../services/polymarket";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
+
+function daysFromNow(days: number): string {
+  return new Date(Date.now() + days * 86400000).toISOString();
+}
 
 const FAKE_MARKETS = [
   {
     id: "mkt-001",
-    question: "Will the US Federal Reserve cut rates in Q3 2025?",
+    question: "Will the Federal Reserve cut rates at the June 2026 FOMC meeting?",
     category: "Economics",
-    status: "active",
-    yesPrice: 0.62,
-    noPrice: 0.38,
+    status: "active" as const,
+    yesPrice: 0.83,
+    noPrice: 0.17,
     volume: 2450000,
+    volume24h: 68000,
     liquidity: 185000,
-    endDate: new Date("2025-09-30T23:59:59Z"),
+    endDate: daysFromNow(12),
     resolvedOutcome: null,
-    description:
-      "This market resolves YES if the Federal Reserve reduces the federal funds rate target by at least 25bps at any FOMC meeting during Q3 2025 (July, September).",
+    description: "Resolves YES if the Federal Reserve reduces the federal funds rate target by at least 25bps at the June 2026 FOMC meeting.",
+    conditionId: "",
+    tokenId: "",
   },
   {
     id: "mkt-002",
-    question: "Will Bitcoin reach $150,000 before end of 2025?",
+    question: "Will Bitcoin stay above $90,000 through June 2026?",
     category: "Crypto",
-    status: "active",
-    yesPrice: 0.41,
-    noPrice: 0.59,
+    status: "active" as const,
+    yesPrice: 0.86,
+    noPrice: 0.14,
     volume: 8750000,
+    volume24h: 320000,
     liquidity: 620000,
-    endDate: new Date("2025-12-31T23:59:59Z"),
+    endDate: daysFromNow(7),
     resolvedOutcome: null,
-    description:
-      "Resolves YES if Bitcoin's spot price on any major exchange (Coinbase, Binance, Kraken) reaches or exceeds $150,000 USD before December 31, 2025 at 11:59 PM UTC.",
+    description: "Resolves YES if Bitcoin remains above $90,000 through the end of June 2026.",
+    conditionId: "",
+    tokenId: "",
   },
   {
     id: "mkt-003",
-    question: "Will SpaceX land humans on Mars before 2030?",
-    category: "Science",
-    status: "active",
-    yesPrice: 0.08,
-    noPrice: 0.92,
+    question: "Will the 2026 FIFA World Cup group stage be completed without incident?",
+    category: "Sports",
+    status: "active" as const,
+    yesPrice: 0.91,
+    noPrice: 0.09,
     volume: 320000,
+    volume24h: 9200,
     liquidity: 45000,
-    endDate: new Date("2029-12-31T23:59:59Z"),
+    endDate: daysFromNow(18),
     resolvedOutcome: null,
-    description:
-      "Resolves YES if SpaceX successfully lands at least one human crew member on the surface of Mars before January 1, 2030.",
+    description: "Resolves YES if all FIFA World Cup group stage matches complete as scheduled.",
+    conditionId: "",
+    tokenId: "",
   },
   {
     id: "mkt-004",
     question: "Will the 2026 FIFA World Cup be won by Brazil?",
     category: "Sports",
-    status: "active",
+    status: "active" as const,
     yesPrice: 0.17,
     noPrice: 0.83,
     volume: 1200000,
+    volume24h: 18000,
     liquidity: 98000,
-    endDate: new Date("2026-07-20T23:59:59Z"),
+    endDate: daysFromNow(80),
     resolvedOutcome: null,
-    description:
-      "Resolves YES if Brazil wins the 2026 FIFA World Cup final held in North America.",
+    description: "Resolves YES if Brazil wins the 2026 FIFA World Cup final held in North America.",
+    conditionId: "",
+    tokenId: "",
   },
   {
     id: "mkt-005",
-    question: "Will OpenAI release GPT-5 before October 2025?",
-    category: "AI",
-    status: "active",
-    yesPrice: 0.73,
-    noPrice: 0.27,
+    question: "Will Ethereum ETH price exceed $3,000 by end of May 2026?",
+    category: "Crypto",
+    status: "active" as const,
+    yesPrice: 0.82,
+    noPrice: 0.18,
     volume: 4100000,
+    volume24h: 145000,
     liquidity: 310000,
-    endDate: new Date("2025-09-30T23:59:59Z"),
+    endDate: daysFromNow(14),
     resolvedOutcome: null,
-    description:
-      "Resolves YES if OpenAI publicly releases a model officially branded as GPT-5 (not a preview or API-only release) before October 1, 2025.",
+    description: "Resolves YES if Ethereum (ETH) closing price exceeds $3,000 on any major exchange before June 1, 2026.",
+    conditionId: "",
+    tokenId: "",
   },
   {
     id: "mkt-006",
-    question: "Will Ethereum ETF inflows exceed $5B in 2025?",
-    category: "Crypto",
-    status: "active",
-    yesPrice: 0.55,
-    noPrice: 0.45,
+    question: "Will US GDP growth remain positive in Q1 2026?",
+    category: "Economics",
+    status: "active" as const,
+    yesPrice: 0.88,
+    noPrice: 0.12,
     volume: 3200000,
+    volume24h: 52000,
     liquidity: 240000,
-    endDate: new Date("2025-12-31T23:59:59Z"),
+    endDate: daysFromNow(9),
     resolvedOutcome: null,
-    description:
-      "Resolves YES if cumulative net inflows into US spot Ethereum ETFs exceed $5 billion by end of 2025.",
+    description: "Resolves YES if the US Bureau of Economic Analysis reports positive GDP growth for Q1 2026.",
+    conditionId: "",
+    tokenId: "",
   },
   {
     id: "mkt-007",
-    question: "Will US inflation (CPI) fall below 2% in 2025?",
+    question: "Will US unemployment remain below 5% through June 2026?",
     category: "Economics",
-    status: "active",
-    yesPrice: 0.29,
-    noPrice: 0.71,
+    status: "active" as const,
+    yesPrice: 0.79,
+    noPrice: 0.21,
     volume: 980000,
+    volume24h: 24000,
     liquidity: 72000,
-    endDate: new Date("2025-12-31T23:59:59Z"),
+    endDate: daysFromNow(16),
     resolvedOutcome: null,
-    description:
-      "Resolves YES if the US Bureau of Labor Statistics reports a year-over-year CPI reading below 2.0% at any point in 2025.",
+    description: "Resolves YES if the US Bureau of Labor Statistics reports unemployment below 5% through June 2026.",
+    conditionId: "",
+    tokenId: "",
   },
   {
     id: "mkt-008",
-    question: "Will Donald Trump be impeached in his second term?",
-    category: "Politics",
-    status: "active",
-    yesPrice: 0.11,
-    noPrice: 0.89,
+    question: "Will Solana (SOL) price exceed $200 by June 2026?",
+    category: "Crypto",
+    status: "active" as const,
+    yesPrice: 0.84,
+    noPrice: 0.16,
     volume: 5600000,
+    volume24h: 95000,
     liquidity: 420000,
-    endDate: new Date("2029-01-20T23:59:59Z"),
+    endDate: daysFromNow(5),
     resolvedOutcome: null,
-    description:
-      "Resolves YES if the US House of Representatives passes articles of impeachment against President Trump during his second term (January 2025 - January 2029).",
+    description: "Resolves YES if Solana (SOL) closing price exceeds $200 on any major exchange before June 1, 2026.",
+    conditionId: "",
+    tokenId: "",
   },
   {
     id: "mkt-009",
-    question: "Will Nvidia stock exceed $200 by end of Q2 2025?",
+    question: "Will Apple stock exceed $240 by end of May 2026?",
     category: "Stocks",
-    status: "resolved",
-    yesPrice: 1.0,
-    noPrice: 0.0,
+    status: "active" as const,
+    yesPrice: 0.81,
+    noPrice: 0.19,
     volume: 2100000,
-    liquidity: 0,
-    endDate: new Date("2025-06-30T23:59:59Z"),
-    resolvedOutcome: "YES",
-    description:
-      "Resolved YES. Nvidia (NVDA) closing price exceeded $200 on June 12, 2025.",
+    volume24h: 38000,
+    liquidity: 160000,
+    endDate: daysFromNow(10),
+    resolvedOutcome: null,
+    description: "Resolves YES if Apple (AAPL) closing price exceeds $240 before June 1, 2026.",
+    conditionId: "",
+    tokenId: "",
   },
   {
     id: "mkt-010",
-    question: "Will Apple release a foldable iPhone in 2025?",
-    category: "Tech",
-    status: "active",
-    yesPrice: 0.19,
-    noPrice: 0.81,
+    question: "Will the S&P 500 close above 5,800 in May 2026?",
+    category: "Stocks",
+    status: "active" as const,
+    yesPrice: 0.76,
+    noPrice: 0.24,
     volume: 870000,
+    volume24h: 41000,
     liquidity: 65000,
-    endDate: new Date("2025-12-31T23:59:59Z"),
+    endDate: daysFromNow(20),
     resolvedOutcome: null,
-    description:
-      "Resolves YES if Apple officially announces and releases a foldable iPhone model for sale to consumers before January 1, 2026.",
+    description: "Resolves YES if the S&P 500 index closes above 5,800 points at any point in May 2026.",
+    conditionId: "",
+    tokenId: "",
   },
 ];
 
-router.get("/markets", (req, res) => {
+async function getMarkets() {
+  try {
+    const markets = await getCachedMarkets();
+    if (markets.length > 0) return { markets, source: "live" as const };
+  } catch (e) {
+    logger.warn({ err: e }, "Gamma API unavailable, using demo data");
+  }
+  return { markets: FAKE_MARKETS, source: "demo" as const };
+}
+
+router.get("/markets", async (req, res) => {
   const query = ListMarketsQueryParams.parse(req.query);
-  let markets = [...FAKE_MARKETS];
+  const { markets } = await getMarkets();
+  let result = [...markets];
 
   if (query.category) {
-    markets = markets.filter(
+    result = result.filter(
       (m) => m.category.toLowerCase() === query.category!.toLowerCase()
     );
   }
 
   if (query.status && query.status !== "all") {
-    markets = markets.filter((m) => m.status === query.status);
+    result = result.filter((m) => m.status === query.status);
   }
 
   if (query.search) {
     const search = query.search.toLowerCase();
-    markets = markets.filter(
+    result = result.filter(
       (m) =>
         m.question.toLowerCase().includes(search) ||
         m.category.toLowerCase().includes(search)
     );
   }
 
-  res.json(ListMarketsResponse.parse(markets));
+  res.json(ListMarketsResponse.parse(result));
 });
 
-router.get("/markets/trending", (_req, res) => {
-  const trending = [...FAKE_MARKETS]
+router.get("/markets/trending", async (_req, res) => {
+  const { markets } = await getMarkets();
+  const trending = [...markets]
     .filter((m) => m.status === "active")
-    .sort((a, b) => b.volume - a.volume)
+    .sort((a, b) => b.volume24h - a.volume24h)
     .slice(0, 5);
 
   res.json(GetTrendingMarketsResponse.parse(trending));
 });
 
-router.get("/markets/:marketId", (req, res) => {
+router.get("/markets/:marketId", async (req, res) => {
   const { marketId } = GetMarketParams.parse(req.params);
-  const market = FAKE_MARKETS.find((m) => m.id === marketId);
 
+  try {
+    const raw = await fetchMarketById(marketId);
+    if (raw) {
+      res.json(GetMarketResponse.parse(normalizeMarket(raw)));
+      return;
+    }
+  } catch {
+    // fall through to demo data
+  }
+
+  const { markets } = await getMarkets();
+  const market = markets.find((m) => m.id === marketId);
   if (!market) {
     res.status(404).json({ error: "Market not found" });
     return;

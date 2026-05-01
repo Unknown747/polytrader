@@ -1,6 +1,6 @@
 # Polymarket Trader
 
-A Polymarket prediction market trading dashboard built for Polygon mainnet. Currently running with fake data for testing.
+A full Polymarket prediction market trading dashboard for Polygon mainnet with real market data, strategy scanner, backtesting, and Telegram notifications.
 
 ## Architecture
 
@@ -21,11 +21,22 @@ pnpm monorepo with the following artifacts and libraries:
 ## Features
 
 - **Dashboard** — Portfolio summary stats, cumulative P&L area chart, trending markets list
-- **Markets** — Browse/search/filter prediction markets by category and status
-- **Market Detail** — Market info + buy/sell YES/NO order form with real-time price preview
+- **Markets** — Browse/search/filter prediction markets (real Polymarket Gamma API with demo fallback)
+- **Market Detail** — Market info + buy/sell YES/NO order form
 - **Positions** — Open positions with unrealized P&L
 - **Orders** — Order history with cancel support
 - **Portfolio** — Cumulative P&L chart, daily P&L bar chart, position breakdown
+- **Strategy Scanner** — Scans near-resolution high-probability markets (>80%, <21 days), calculates edge and half-Kelly sizing
+- **Backtester** — Simulates strategy on historical data, shows equity curve, win rate, Sharpe ratio, trade log
+- **Settings** — Wallet status, Telegram setup, auto-trading bot config (scan interval, min edge, max position, etc.)
+
+## Backend Services
+
+- **`services/polymarket.ts`** — Polymarket Gamma API client with 5-min caching
+- **`services/strategy.ts`** — Strategy scanner with half-Kelly criterion, opportunity scoring
+- **`services/backtest.ts`** — Historical simulation engine (deterministic, parameterizable)
+- **`services/telegram.ts`** — Telegram bot notifications (opportunities, fills, daily P&L)
+- **`services/scheduler.ts`** — Background auto-scan cron (configurable interval)
 
 ## Data Mode
 

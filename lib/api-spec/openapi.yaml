@@ -9,19 +9,13 @@ servers:
     description: Base API path
 tags:
   - name: health
-    description: Health operations
   - name: markets
-    description: Polymarket prediction markets
   - name: positions
-    description: User trading positions
   - name: orders
-    description: Trade orders
   - name: portfolio
-    description: Portfolio summary and stats
   - name: strategy
-    description: Trading strategy and opportunity scanner
   - name: wallet
-    description: Wallet and credentials management
+  - name: telegram
 paths:
   /healthz:
     get:
@@ -65,6 +59,21 @@ paths:
                 items:
                   $ref: "#/components/schemas/Market"
 
+  /markets/trending:
+    get:
+      operationId: getTrendingMarkets
+      tags: [markets]
+      summary: Get trending markets by volume
+      responses:
+        "200":
+          description: Trending markets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Market"
+
   /markets/{marketId}:
     get:
       operationId: getMarket
@@ -83,21 +92,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Market"
-
-  /markets/trending:
-    get:
-      operationId: getTrendingMarkets
-      tags: [markets]
-      summary: Get trending markets by volume
-      responses:
-        "200":
-          description: Trending markets
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Market"
 
   /positions:
     get:
@@ -182,7 +176,7 @@ paths:
     get:
       operationId: getPortfolioPnl
       tags: [portfolio]
-      summary: Get P&L history over time
+      summary: Get P&L history
       responses:
         "200":
           description: P&L history
@@ -197,10 +191,10 @@ paths:
     get:
       operationId: getOpportunities
       tags: [strategy]
-      summary: Get trading opportunities based on strategy scanner
+      summary: Get trading opportunities from scanner
       responses:
         "200":
-          description: List of trading opportunities
+          description: List of opportunities
           content:
             application/json:
               schema:
@@ -208,11 +202,60 @@ paths:
                 items:
                   $ref: "#/components/schemas/Opportunity"
 
+  /strategy/config:
+    get:
+      operationId: getStrategyConfig
+      tags: [strategy]
+      summary: Get auto-trading configuration
+      responses:
+        "200":
+          description: Current config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StrategyConfig"
+    put:
+      operationId: updateStrategyConfig
+      tags: [strategy]
+      summary: Update auto-trading configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StrategyConfig"
+      responses:
+        "200":
+          description: Updated config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StrategyConfig"
+
+  /strategy/backtest:
+    post:
+      operationId: runBacktest
+      tags: [strategy]
+      summary: Run strategy backtest on historical data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BacktestRequest"
+      responses:
+        "200":
+          description: Backtest results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BacktestResult"
+
   /wallet/status:
     get:
       operationId: getWalletStatus
       tags: [wallet]
-      summary: Get wallet connection status and balance
+      summary: Get wallet connection status
       responses:
         "200":
           description: Wallet status
@@ -221,6 +264,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/WalletStatus"
 
+  /telegram/test:
+    post:
+      operationId: testTelegram
+      tags: [telegram]
+      summary: Send a test Telegram notification
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TelegramTestResult"
+
 components:
   schemas:
     HealthStatus:
@@ -228,8 +284,7 @@ components:
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
     Market:
       type: object
@@ -245,19 +300,14 @@ components:
           enum: [active, resolved, closed]
         yesPrice:
           type: number
-          format: float
         noPrice:
           type: number
-          format: float
         volume:
           type: number
-          format: float
         volume24h:
           type: number
-          format: float
         liquidity:
           type: number
-          format: float
         endDate:
           type: string
           format: date-time
@@ -372,12 +422,7 @@ components:
           type: number
         amount:
           type: number
-      required:
-        - marketId
-        - side
-        - type
-        - price
-        - amount
+      required: [marketId, side, type, price, amount]
 
     PortfolioSummary:
       type: object
@@ -417,10 +462,7 @@ components:
           type: number
         cumulative:
           type: number
-      required:
-        - date
-        - pnl
-        - cumulative
+      required: [date, pnl, cumulative]
 
     Opportunity:
       type: object
@@ -473,6 +515,132 @@ components:
         - volume24h
         - rationale
 
+    StrategyConfig:
+      type: object
+      properties:
+        autoTradingEnabled:
+          type: boolean
+        bankroll:
+          type: number
+        maxPositionPct:
+          type: number
+        minEdge:
+          type: number
+        minProbability:
+          type: number
+        maxDaysToResolution:
+          type: integer
+        minVolume24h:
+          type: number
+        scanIntervalMinutes:
+          type: integer
+        telegramAlertsEnabled:
+          type: boolean
+        maxDailyTrades:
+          type: integer
+      required:
+        - autoTradingEnabled
+        - bankroll
+        - maxPositionPct
+        - minEdge
+        - minProbability
+        - maxDaysToResolution
+        - minVolume24h
+        - scanIntervalMinutes
+        - telegramAlertsEnabled
+        - maxDailyTrades
+
+    BacktestRequest:
+      type: object
+      properties:
+        daysBack:
+          type: integer
+        bankroll:
+          type: number
+        minProbability:
+          type: number
+        maxDaysToResolution:
+          type: integer
+        maxPositionPct:
+          type: number
+      required: [daysBack, bankroll, minProbability, maxDaysToResolution, maxPositionPct]
+
+    BacktestResult:
+      type: object
+      properties:
+        totalReturn:
+          type: number
+        totalReturnPct:
+          type: number
+        winRate:
+          type: number
+        totalTrades:
+          type: integer
+        winningTrades:
+          type: integer
+        losingTrades:
+          type: integer
+        avgReturn:
+          type: number
+        maxDrawdown:
+          type: number
+        sharpeRatio:
+          type: number
+        trades:
+          type: array
+          items:
+            $ref: "#/components/schemas/BacktestTrade"
+        equityCurve:
+          type: array
+          items:
+            $ref: "#/components/schemas/PnlPoint"
+      required:
+        - totalReturn
+        - totalReturnPct
+        - winRate
+        - totalTrades
+        - winningTrades
+        - losingTrades
+        - avgReturn
+        - maxDrawdown
+        - sharpeRatio
+        - trades
+        - equityCurve
+
+    BacktestTrade:
+      type: object
+      properties:
+        date:
+          type: string
+        question:
+          type: string
+        side:
+          type: string
+          enum: [YES, NO]
+        entryPrice:
+          type: number
+        exitPrice:
+          type: number
+        amount:
+          type: number
+        pnl:
+          type: number
+        pnlPct:
+          type: number
+        outcome:
+          type: string
+          enum: [win, loss]
+      required:
+        - date
+        - question
+        - side
+        - entryPrice
+        - exitPrice
+        - amount
+        - pnl
+        - pnlPct
+        - outcome
+
     WalletStatus:
       type: object
       properties:
@@ -490,6 +658,8 @@ components:
         dataSource:
           type: string
           enum: [live, demo]
+        telegramConfigured:
+          type: boolean
       required:
         - connected
         - address
@@ -497,3 +667,13 @@ components:
         - hasApiCredentials
         - network
         - dataSource
+        - telegramConfigured
+
+    TelegramTestResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+      required: [success, message]

@@ -6,6 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./backtestRequest";
+export * from "./backtestResult";
+export * from "./backtestTrade";
+export * from "./backtestTradeOutcome";
+export * from "./backtestTradeSide";
 export * from "./healthStatus";
 export * from "./listMarketsParams";
 export * from "./listMarketsStatus";
@@ -25,5 +30,7 @@ export * from "./pnlPoint";
 export * from "./portfolioSummary";
 export * from "./position";
 export * from "./positionSide";
+export * from "./strategyConfig";
+export * from "./telegramTestResult";
 export * from "./walletStatus";
 export * from "./walletStatusDataSource";

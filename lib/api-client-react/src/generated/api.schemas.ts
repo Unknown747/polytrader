@@ -166,6 +166,69 @@ export interface Opportunity {
   conditionId?: string;
 }
 
+export interface StrategyConfig {
+  autoTradingEnabled: boolean;
+  bankroll: number;
+  maxPositionPct: number;
+  minEdge: number;
+  minProbability: number;
+  maxDaysToResolution: number;
+  minVolume24h: number;
+  scanIntervalMinutes: number;
+  telegramAlertsEnabled: boolean;
+  maxDailyTrades: number;
+}
+
+export interface BacktestRequest {
+  daysBack: number;
+  bankroll: number;
+  minProbability: number;
+  maxDaysToResolution: number;
+  maxPositionPct: number;
+}
+
+export type BacktestTradeSide =
+  (typeof BacktestTradeSide)[keyof typeof BacktestTradeSide];
+
+export const BacktestTradeSide = {
+  YES: "YES",
+  NO: "NO",
+} as const;
+
+export type BacktestTradeOutcome =
+  (typeof BacktestTradeOutcome)[keyof typeof BacktestTradeOutcome];
+
+export const BacktestTradeOutcome = {
+  win: "win",
+  loss: "loss",
+} as const;
+
+export interface BacktestTrade {
+  date: string;
+  question: string;
+  side: BacktestTradeSide;
+  entryPrice: number;
+  exitPrice: number;
+  amount: number;
+  pnl: number;
+  pnlPct: number;
+  outcome: BacktestTradeOutcome;
+}
+
+export interface BacktestResult {
+  totalReturn: number;
+  totalReturnPct: number;
+  winRate: number;
+  totalTrades: number;
+  winningTrades: number;
+  losingTrades: number;
+  avgReturn: number;
+  maxDrawdown: number;
+  sharpeRatio: number;
+  trades: BacktestTrade[];
+  equityCurve: PnlPoint[];
+}
+
 export type WalletStatusDataSource =
   (typeof WalletStatusDataSource)[keyof typeof WalletStatusDataSource];
 
@@ -181,6 +244,12 @@ export interface WalletStatus {
   hasApiCredentials: boolean;
   network: string;
   dataSource: WalletStatusDataSource;
+  telegramConfigured: boolean;
+}
+
+export interface TelegramTestResult {
+  success: boolean;
+  message: string;
 }
 
 export type ListMarketsParams = {

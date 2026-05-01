@@ -17,6 +17,8 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  BacktestRequest,
+  BacktestResult,
   HealthStatus,
   ListMarketsParams,
   Market,
@@ -26,6 +28,8 @@ import type {
   PnlPoint,
   PortfolioSummary,
   Position,
+  StrategyConfig,
+  TelegramTestResult,
   WalletStatus,
 } from "./api.schemas";
 
@@ -208,6 +212,81 @@ export function useListMarkets<
 }
 
 /**
+ * @summary Get trending markets by volume
+ */
+export const getGetTrendingMarketsUrl = () => {
+  return `/api/markets/trending`;
+};
+
+export const getTrendingMarkets = async (
+  options?: RequestInit,
+): Promise<Market[]> => {
+  return customFetch<Market[]>(getGetTrendingMarketsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetTrendingMarketsQueryKey = () => {
+  return [`/api/markets/trending`] as const;
+};
+
+export const getGetTrendingMarketsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTrendingMarkets>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTrendingMarkets>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetTrendingMarketsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getTrendingMarkets>>
+  > = ({ signal }) => getTrendingMarkets({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTrendingMarkets>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTrendingMarketsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTrendingMarkets>>
+>;
+export type GetTrendingMarketsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get trending markets by volume
+ */
+
+export function useGetTrendingMarkets<
+  TData = Awaited<ReturnType<typeof getTrendingMarkets>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTrendingMarkets>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTrendingMarketsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
  * @summary Get market details
  */
 export const getGetMarketUrl = (marketId: string) => {
@@ -284,81 +363,6 @@ export function useGetMarket<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetMarketQueryOptions(marketId, options);
-
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
-    queryKey: QueryKey;
-  };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-/**
- * @summary Get trending markets by volume
- */
-export const getGetTrendingMarketsUrl = () => {
-  return `/api/markets/trending`;
-};
-
-export const getTrendingMarkets = async (
-  options?: RequestInit,
-): Promise<Market[]> => {
-  return customFetch<Market[]>(getGetTrendingMarketsUrl(), {
-    ...options,
-    method: "GET",
-  });
-};
-
-export const getGetTrendingMarketsQueryKey = () => {
-  return [`/api/markets/trending`] as const;
-};
-
-export const getGetTrendingMarketsQueryOptions = <
-  TData = Awaited<ReturnType<typeof getTrendingMarkets>>,
-  TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getTrendingMarkets>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
-
-  const queryKey = queryOptions?.queryKey ?? getGetTrendingMarketsQueryKey();
-
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof getTrendingMarkets>>
-  > = ({ signal }) => getTrendingMarkets({ signal, ...requestOptions });
-
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof getTrendingMarkets>>,
-    TError,
-    TData
-  > & { queryKey: QueryKey };
-};
-
-export type GetTrendingMarketsQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getTrendingMarkets>>
->;
-export type GetTrendingMarketsQueryError = ErrorType<unknown>;
-
-/**
- * @summary Get trending markets by volume
- */
-
-export function useGetTrendingMarkets<
-  TData = Awaited<ReturnType<typeof getTrendingMarkets>>,
-  TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getTrendingMarkets>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetTrendingMarketsQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -761,7 +765,7 @@ export function useGetPortfolioSummary<
 }
 
 /**
- * @summary Get P&L history over time
+ * @summary Get P&L history
  */
 export const getGetPortfolioPnlUrl = () => {
   return `/api/portfolio/pnl`;
@@ -812,7 +816,7 @@ export type GetPortfolioPnlQueryResult = NonNullable<
 export type GetPortfolioPnlQueryError = ErrorType<unknown>;
 
 /**
- * @summary Get P&L history over time
+ * @summary Get P&L history
  */
 
 export function useGetPortfolioPnl<
@@ -836,7 +840,7 @@ export function useGetPortfolioPnl<
 }
 
 /**
- * @summary Get trading opportunities based on strategy scanner
+ * @summary Get trading opportunities from scanner
  */
 export const getGetOpportunitiesUrl = () => {
   return `/api/strategy/opportunities`;
@@ -887,7 +891,7 @@ export type GetOpportunitiesQueryResult = NonNullable<
 export type GetOpportunitiesQueryError = ErrorType<unknown>;
 
 /**
- * @summary Get trading opportunities based on strategy scanner
+ * @summary Get trading opportunities from scanner
  */
 
 export function useGetOpportunities<
@@ -911,7 +915,254 @@ export function useGetOpportunities<
 }
 
 /**
- * @summary Get wallet connection status and balance
+ * @summary Get auto-trading configuration
+ */
+export const getGetStrategyConfigUrl = () => {
+  return `/api/strategy/config`;
+};
+
+export const getStrategyConfig = async (
+  options?: RequestInit,
+): Promise<StrategyConfig> => {
+  return customFetch<StrategyConfig>(getGetStrategyConfigUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetStrategyConfigQueryKey = () => {
+  return [`/api/strategy/config`] as const;
+};
+
+export const getGetStrategyConfigQueryOptions = <
+  TData = Awaited<ReturnType<typeof getStrategyConfig>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getStrategyConfig>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetStrategyConfigQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getStrategyConfig>>
+  > = ({ signal }) => getStrategyConfig({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getStrategyConfig>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetStrategyConfigQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getStrategyConfig>>
+>;
+export type GetStrategyConfigQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get auto-trading configuration
+ */
+
+export function useGetStrategyConfig<
+  TData = Awaited<ReturnType<typeof getStrategyConfig>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getStrategyConfig>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetStrategyConfigQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update auto-trading configuration
+ */
+export const getUpdateStrategyConfigUrl = () => {
+  return `/api/strategy/config`;
+};
+
+export const updateStrategyConfig = async (
+  strategyConfig: StrategyConfig,
+  options?: RequestInit,
+): Promise<StrategyConfig> => {
+  return customFetch<StrategyConfig>(getUpdateStrategyConfigUrl(), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(strategyConfig),
+  });
+};
+
+export const getUpdateStrategyConfigMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateStrategyConfig>>,
+    TError,
+    { data: BodyType<StrategyConfig> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateStrategyConfig>>,
+  TError,
+  { data: BodyType<StrategyConfig> },
+  TContext
+> => {
+  const mutationKey = ["updateStrategyConfig"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateStrategyConfig>>,
+    { data: BodyType<StrategyConfig> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateStrategyConfig(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateStrategyConfigMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateStrategyConfig>>
+>;
+export type UpdateStrategyConfigMutationBody = BodyType<StrategyConfig>;
+export type UpdateStrategyConfigMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update auto-trading configuration
+ */
+export const useUpdateStrategyConfig = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateStrategyConfig>>,
+    TError,
+    { data: BodyType<StrategyConfig> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateStrategyConfig>>,
+  TError,
+  { data: BodyType<StrategyConfig> },
+  TContext
+> => {
+  return useMutation(getUpdateStrategyConfigMutationOptions(options));
+};
+
+/**
+ * @summary Run strategy backtest on historical data
+ */
+export const getRunBacktestUrl = () => {
+  return `/api/strategy/backtest`;
+};
+
+export const runBacktest = async (
+  backtestRequest: BacktestRequest,
+  options?: RequestInit,
+): Promise<BacktestResult> => {
+  return customFetch<BacktestResult>(getRunBacktestUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(backtestRequest),
+  });
+};
+
+export const getRunBacktestMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runBacktest>>,
+    TError,
+    { data: BodyType<BacktestRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof runBacktest>>,
+  TError,
+  { data: BodyType<BacktestRequest> },
+  TContext
+> => {
+  const mutationKey = ["runBacktest"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof runBacktest>>,
+    { data: BodyType<BacktestRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return runBacktest(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RunBacktestMutationResult = NonNullable<
+  Awaited<ReturnType<typeof runBacktest>>
+>;
+export type RunBacktestMutationBody = BodyType<BacktestRequest>;
+export type RunBacktestMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Run strategy backtest on historical data
+ */
+export const useRunBacktest = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runBacktest>>,
+    TError,
+    { data: BodyType<BacktestRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof runBacktest>>,
+  TError,
+  { data: BodyType<BacktestRequest> },
+  TContext
+> => {
+  return useMutation(getRunBacktestMutationOptions(options));
+};
+
+/**
+ * @summary Get wallet connection status
  */
 export const getGetWalletStatusUrl = () => {
   return `/api/wallet/status`;
@@ -962,7 +1213,7 @@ export type GetWalletStatusQueryResult = NonNullable<
 export type GetWalletStatusQueryError = ErrorType<unknown>;
 
 /**
- * @summary Get wallet connection status and balance
+ * @summary Get wallet connection status
  */
 
 export function useGetWalletStatus<
@@ -984,3 +1235,84 @@ export function useGetWalletStatus<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Send a test Telegram notification
+ */
+export const getTestTelegramUrl = () => {
+  return `/api/telegram/test`;
+};
+
+export const testTelegram = async (
+  options?: RequestInit,
+): Promise<TelegramTestResult> => {
+  return customFetch<TelegramTestResult>(getTestTelegramUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getTestTelegramMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof testTelegram>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof testTelegram>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["testTelegram"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof testTelegram>>,
+    void
+  > = () => {
+    return testTelegram(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type TestTelegramMutationResult = NonNullable<
+  Awaited<ReturnType<typeof testTelegram>>
+>;
+
+export type TestTelegramMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Send a test Telegram notification
+ */
+export const useTestTelegram = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof testTelegram>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof testTelegram>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getTestTelegramMutationOptions(options));
+};
