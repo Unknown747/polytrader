@@ -37,7 +37,7 @@ pnpm monorepo with the following artifacts and libraries:
 |------|---------------|
 | `services/polymarket.ts` | Polymarket Gamma API client — 5-min cache, retry (3×), multi-page fetch (up to 1 000 markets), tokenId parsing from `clobTokenIds` |
 | `services/strategy.ts` | Composite scoring: edge 35%, expected return 20%, time urgency 20%, liquidity 15%, volume 10%. Config persisted to SQLite (`strategy_config` table) — survives server restarts. |
-| `services/backtest.ts` | Realistic simulation: win rate from entry price, 30 unique market templates, randomised trade timing |
+| `services/strategy.ts` (backtest) | Realistic simulation merged into strategy.ts: win rate from entry price, 30 unique market templates, randomised trade timing |
 | `services/telegram.ts` | Retry (3×) + rate-limit handling, top-5 opportunities, real portfolio data in daily reports |
 | `services/telegramBot.ts` | Long-polling command bot: 16 commands (see below). Rate limiting per command, inline keyboard confirmation for cancellations, `lastUpdateId` persisted in `poly.db`. |
 | `lib/db.ts` | SQLite singleton using `better-sqlite3`. Opens `poly.db` (WAL mode). Tables: `portfolio_orders`, `portfolio_positions`, `portfolio_pnl`, `bot_state`, `strategy_config`, `auto_trade_history`, `market_watchlist`, `price_alerts`, `app_credentials`. |
@@ -98,7 +98,7 @@ pnpm monorepo with the following artifacts and libraries:
 | GET | `/api/auto-trading/status` | Auto-trader status, USDC balance, recent trades from DB |
 | GET | `/api/auto-trading/history` | Full trade history from SQLite |
 | POST | `/api/auto-trading/trigger` | Trigger manual scan + execution cycle |
-| GET | `/api/markets/:id/history` | 30-day price history for a market (simulated, seeded) |
+| GET | `/api/markets/:id/history` | N-day price history for a market (simulated, seeded; 7–90 days via `?days=`) |
 | GET | `/api/watchlist` | Get all watched markets |
 | POST | `/api/watchlist` | Add market to watchlist |
 | DELETE | `/api/watchlist/:marketId` | Remove market from watchlist |
@@ -180,10 +180,12 @@ Credentials can also be stored in SQLite via the Telegram bot (`/setcred private
 | `artifacts/api-server/src/services/scheduler.ts` | Scan scheduler (price updates + alerts + auto-trade) |
 | `artifacts/api-server/src/services/telegramBot.ts` | 16-command Telegram bot with /watch, /alert, /watchlist, /alerts commands |
 | `artifacts/api-server/src/app.ts` | Express app with rate limiting |
-| `artifacts/api-server/src/routes/watchlist.ts` | Watchlist CRUD routes |
-| `artifacts/api-server/src/routes/alerts.ts` | Price alerts CRUD routes |
-| `artifacts/api-server/src/routes/marketHistory.ts` | Market price history (30d simulated) |
-| `artifacts/api-server/src/routes/export.ts` | CSV export for orders/positions/pnl |
+| `artifacts/api-server/src/routes/system.ts` | Health, wallet, demo reset, credentials (4 → 1) |
+| `artifacts/api-server/src/routes/portfolio.ts` | Positions, orders, portfolio summary, CSV export (4 → 1) |
+| `artifacts/api-server/src/routes/notifications.ts` | Telegram test, watchlist CRUD, price alerts CRUD (3 → 1) |
+| `artifacts/api-server/src/routes/trading.ts` | Strategy, auto-trader, SSE price stream (3 → 1) |
+| `artifacts/api-server/src/routes/markets.ts` | Market list/search, trending, detail, price history, correlation (5 → 1) |
+| `artifacts/polymarket-trader/src/hooks/index.ts` | usePriceStream + useToast merged (2 → 1) |
 | `artifacts/polymarket-trader/src/pages/Portfolio.tsx` | Portfolio page with live CLOB panel + pie chart + CSV export |
 | `artifacts/polymarket-trader/src/pages/MarketDetail.tsx` | Market detail with 30d price chart, watchlist star, price alert bell |
 | `artifacts/polymarket-trader/src/pages/Markets.tsx` | Markets list with watchlist star buttons + filter |

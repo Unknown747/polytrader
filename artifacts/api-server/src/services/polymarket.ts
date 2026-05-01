@@ -1,4 +1,4 @@
-import { logger } from "../lib/logger";
+import { logger } from "../lib/db";
 
 const GAMMA_API = "https://gamma-api.polymarket.com";
 

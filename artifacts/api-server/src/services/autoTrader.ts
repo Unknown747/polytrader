@@ -1,4 +1,4 @@
-import { logger } from "../lib/logger";
+import { logger } from "../lib/db";
 import type { Opportunity, StrategyConfig } from "./strategy";
 import { placeOrder, isClobConfigured, getUsdcBalance } from "./clob";
 import { portfolioState } from "../lib/state";

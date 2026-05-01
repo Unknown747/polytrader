@@ -1,5 +1,5 @@
 import app from "./app";
-import { logger } from "./lib/logger";
+import { logger } from "./lib/db";
 import { startScheduler, stopScheduler } from "./services/scheduler";
 import { startTelegramBot, stopTelegramBot } from "./services/telegramBot";
 

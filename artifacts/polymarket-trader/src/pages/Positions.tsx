@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { usePriceStream } from "@/hooks/usePriceStream";
+import { usePriceStream } from "@/hooks";
 
 function handleExport() {
   const url = `${import.meta.env.BASE_URL}api/portfolio/export?type=positions`;

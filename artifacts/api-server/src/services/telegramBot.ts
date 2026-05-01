@@ -1,4 +1,4 @@
-import { logger } from "../lib/logger";
+import { logger } from "../lib/db";
 import db from "../lib/db";
 import { portfolioState } from "../lib/state";
 import { getAutoTraderStats } from "./autoTrader";

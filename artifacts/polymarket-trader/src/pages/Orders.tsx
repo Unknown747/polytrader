@@ -4,7 +4,7 @@ import { X, Download } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/hooks";
 import { cn } from "@/lib/utils";
 
 function statusColor(status: string) {

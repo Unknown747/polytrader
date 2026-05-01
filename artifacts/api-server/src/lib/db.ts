@@ -1,7 +1,26 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import type BetterSqlite3NS from "better-sqlite3";
-import { logger } from "./logger";
+import pino from "pino";
+
+const isProduction = process.env.NODE_ENV === "production";
+
+export const logger = pino({
+  level: process.env.LOG_LEVEL ?? "info",
+  redact: [
+    "req.headers.authorization",
+    "req.headers.cookie",
+    "res.headers['set-cookie']",
+  ],
+  ...(isProduction
+    ? {}
+    : {
+        transport: {
+          target: "pino-pretty",
+          options: { colorize: true },
+        },
+      }),
+});
 
 const _require = createRequire(import.meta.url);
 const Database = _require("better-sqlite3") as typeof BetterSqlite3NS;

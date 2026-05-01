@@ -1,4 +1,4 @@
-import { logger } from "../lib/logger";
+import { logger } from "../lib/db";
 import { getCachedMarkets, invalidateCache } from "./polymarket";
 import { scanOpportunities, getConfig } from "./strategy";
 import {

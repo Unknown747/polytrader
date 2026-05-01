@@ -1,6 +1,6 @@
 import { ethers } from "ethers";
 import { createHmac, randomBytes } from "crypto";
-import { logger } from "../lib/logger";
+import { logger } from "../lib/db";
 import db from "../lib/db";
 
 function getDbCred(key: string): string | undefined {
