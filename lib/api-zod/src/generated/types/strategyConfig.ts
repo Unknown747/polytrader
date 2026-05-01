@@ -19,4 +19,8 @@ export interface StrategyConfig {
   telegramAlertsEnabled: boolean;
   maxDailyTrades: number;
   maxOpportunities: number;
+  dailyReportHour: number;
+  stopLossPct: number;
+  takeProfitPct: number;
+  trendFilterEnabled: boolean;
 }

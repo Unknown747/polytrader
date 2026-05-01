@@ -386,4 +386,56 @@ export async function computeLivePnlHistory(trades: ClobTrade[]): Promise<
   });
 }
 
+export interface OpenOrder {
+  id: string;
+  market: string;
+  side: "BUY" | "SELL";
+  price: number;
+  originalSize: number;
+  sizeMatched: number;
+  status: string;
+  createdAt: string;
+}
+
+export async function getOpenOrders(): Promise<OpenOrder[]> {
+  const creds = getCreds();
+  if (!creds) return [];
+  const address = getWalletAddress();
+  if (!address) return [];
+  try {
+    const path = `/orders?maker=${address}&status=OPEN`;
+    const headers = buildL2AuthHeaders(creds, "GET", path);
+    const res = await fetch(`${CLOB_URL}${path}`, {
+      headers,
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json() as {
+      data?: Array<{
+        id?: string;
+        asset_id?: string;
+        side?: string;
+        price?: string;
+        original_size?: string;
+        size_matched?: string;
+        status?: string;
+        created_at?: string;
+      }>;
+    };
+    return (data.data ?? []).map((o) => ({
+      id: o.id ?? "",
+      market: o.asset_id ?? "",
+      side: (o.side ?? "BUY").toUpperCase() as "BUY" | "SELL",
+      price: parseFloat(o.price ?? "0"),
+      originalSize: parseFloat(o.original_size ?? "0"),
+      sizeMatched: parseFloat(o.size_matched ?? "0"),
+      status: o.status ?? "OPEN",
+      createdAt: o.created_at ?? new Date().toISOString(),
+    }));
+  } catch (err) {
+    logger.warn({ err }, "getOpenOrders failed");
+    return [];
+  }
+}
+
 export { getWalletAddress };

@@ -189,6 +189,18 @@ export default function Backtest() {
               icon={TrendingUp}
             />
             <StatCard
+              label="Total Fees Paid"
+              value={`$${result.totalFeesPaid.toFixed(2)}`}
+              positive={result.totalFeesPaid < result.totalTrades * 0.5}
+              icon={AlertTriangle}
+            />
+            <StatCard
+              label="Avg Spread Cost"
+              value={`${result.avgSpreadPct.toFixed(2)}%`}
+              positive={result.avgSpreadPct < 1}
+              icon={AlertTriangle}
+            />
+            <StatCard
               label="Wins"
               value={String(result.winningTrades)}
               positive={true}
@@ -287,6 +299,7 @@ export default function Backtest() {
                     <th className="text-right px-4 py-2.5 text-muted-foreground font-medium">Exit</th>
                     <th className="text-right px-4 py-2.5 text-muted-foreground font-medium">Amount</th>
                     <th className="text-right px-4 py-2.5 text-muted-foreground font-medium">P&L</th>
+                    <th className="text-right px-4 py-2.5 text-muted-foreground font-medium">Fee</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -314,6 +327,9 @@ export default function Backtest() {
                         t.pnl >= 0 ? "text-yes" : "text-no"
                       )}>
                         {t.pnl >= 0 ? "+" : ""}${t.pnl.toFixed(2)}
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-muted-foreground text-xs">
+                        ${t.feePaid.toFixed(3)}
                       </td>
                     </tr>
                   ))}

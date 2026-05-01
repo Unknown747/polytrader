@@ -20,6 +20,7 @@ export * from "./listMarketsStatus";
 export * from "./market";
 export * from "./marketStatus";
 export * from "./opportunity";
+export * from "./opportunityPriceTrend";
 export * from "./opportunityRecommendedSide";
 export * from "./opportunityRiskLevel";
 export * from "./order";

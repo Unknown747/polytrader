@@ -1418,3 +1418,76 @@ export function useGetWatchlistCorrelation<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary SSE stream of live YES prices for all watchlisted markets (push every 15s)
+ */
+export const getStreamPricesUrl = () => {
+  return `/api/prices/stream`;
+};
+
+export const streamPrices = async (options?: RequestInit): Promise<string> => {
+  return customFetch<string>(getStreamPricesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getStreamPricesQueryKey = () => {
+  return [`/api/prices/stream`] as const;
+};
+
+export const getStreamPricesQueryOptions = <
+  TData = Awaited<ReturnType<typeof streamPrices>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof streamPrices>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getStreamPricesQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof streamPrices>>> = ({
+    signal,
+  }) => streamPrices({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof streamPrices>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type StreamPricesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof streamPrices>>
+>;
+export type StreamPricesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary SSE stream of live YES prices for all watchlisted markets (push every 15s)
+ */
+
+export function useStreamPrices<
+  TData = Awaited<ReturnType<typeof streamPrices>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof streamPrices>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getStreamPricesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}

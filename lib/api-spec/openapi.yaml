@@ -298,6 +298,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/CorrelationMatrix"
 
+  /prices/stream:
+    get:
+      operationId: streamPrices
+      tags: [markets]
+      summary: SSE stream of live YES prices for all watchlisted markets (push every 15s)
+      responses:
+        "200":
+          description: Server-Sent Events stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
 components:
   schemas:
     HealthStatus:
@@ -524,6 +537,9 @@ components:
           type: string
         conditionId:
           type: string
+        priceTrend:
+          type: string
+          enum: [up, flat, down]
       required:
         - marketId
         - question
@@ -541,6 +557,8 @@ components:
         - liquidity
         - compositeScore
         - rationale
+        - conditionId
+        - priceTrend
 
     StrategyConfig:
       type: object
@@ -569,6 +587,14 @@ components:
           type: integer
         maxOpportunities:
           type: integer
+        dailyReportHour:
+          type: integer
+        stopLossPct:
+          type: number
+        takeProfitPct:
+          type: number
+        trendFilterEnabled:
+          type: boolean
       required:
         - autoTradingEnabled
         - bankroll
@@ -582,6 +608,10 @@ components:
         - telegramAlertsEnabled
         - maxDailyTrades
         - maxOpportunities
+        - dailyReportHour
+        - stopLossPct
+        - takeProfitPct
+        - trendFilterEnabled
 
     BacktestRequest:
       type: object
@@ -619,6 +649,10 @@ components:
           type: number
         sharpeRatio:
           type: number
+        totalFeesPaid:
+          type: number
+        avgSpreadPct:
+          type: number
         trades:
           type: array
           items:
@@ -637,6 +671,8 @@ components:
         - avgReturn
         - maxDrawdown
         - sharpeRatio
+        - totalFeesPaid
+        - avgSpreadPct
         - trades
         - equityCurve
 
@@ -663,6 +699,10 @@ components:
         outcome:
           type: string
           enum: [win, loss]
+        feePaid:
+          type: number
+        spread:
+          type: number
       required:
         - date
         - question
@@ -673,6 +713,8 @@ components:
         - pnl
         - pnlPct
         - outcome
+        - feePaid
+        - spread
 
     WalletStatus:
       type: object

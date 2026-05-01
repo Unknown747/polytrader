@@ -14,6 +14,8 @@ import demoRouter from "./demo";
 import watchlistRouter from "./watchlist";
 import alertsRouter from "./alerts";
 import correlationRouter from "./correlation";
+import pricesRouter from "./prices";
+import credentialsRouter from "./credentials";
 
 const router: IRouter = Router();
 
@@ -30,6 +32,8 @@ router.use(telegramRouter);
 router.use(autoTraderRouter);
 router.use(demoRouter);
 router.use(correlationRouter);
+router.use("/prices", pricesRouter);
+router.use("/credentials", credentialsRouter);
 router.use(watchlistRouter);
 router.use(alertsRouter);
 

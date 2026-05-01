@@ -173,12 +173,21 @@ export async function executeOpportunities(
   for (const op of eligibleOps) {
     const kellyAmount = config.bankroll * op.kellyFraction;
     const maxAmount = (balance * config.maxPositionPct) / 100;
-    const amount = Math.min(
+    let amount = Math.min(
       kellyAmount,
       maxAmount,
       op.suggestedAmount,
       balance * 0.2
     );
+
+    const liquidityLimit = op.liquidity * 0.05;
+    if (amount > liquidityLimit) {
+      logger.warn(
+        { question: op.question, amount, liquidityLimit, liquidity: op.liquidity },
+        "Auto-trading: order size exceeds 5% of market liquidity — reducing to avoid slippage"
+      );
+      amount = liquidityLimit;
+    }
 
     if (amount < 0.5) {
       logger.info({ question: op.question, amount }, "Auto-trading: amount too small, skipping");

@@ -197,7 +197,8 @@ export const GetOpportunitiesResponseItem = zod.object({
   liquidity: zod.number(),
   compositeScore: zod.number(),
   rationale: zod.string(),
-  conditionId: zod.string().optional(),
+  conditionId: zod.string(),
+  priceTrend: zod.enum(["up", "flat", "down"]),
 });
 export const GetOpportunitiesResponse = zod.array(GetOpportunitiesResponseItem);
 
@@ -217,6 +218,10 @@ export const GetStrategyConfigResponse = zod.object({
   telegramAlertsEnabled: zod.boolean(),
   maxDailyTrades: zod.number(),
   maxOpportunities: zod.number(),
+  dailyReportHour: zod.number(),
+  stopLossPct: zod.number(),
+  takeProfitPct: zod.number(),
+  trendFilterEnabled: zod.boolean(),
 });
 
 /**
@@ -235,6 +240,10 @@ export const UpdateStrategyConfigBody = zod.object({
   telegramAlertsEnabled: zod.boolean(),
   maxDailyTrades: zod.number(),
   maxOpportunities: zod.number(),
+  dailyReportHour: zod.number(),
+  stopLossPct: zod.number(),
+  takeProfitPct: zod.number(),
+  trendFilterEnabled: zod.boolean(),
 });
 
 export const UpdateStrategyConfigResponse = zod.object({
@@ -250,6 +259,10 @@ export const UpdateStrategyConfigResponse = zod.object({
   telegramAlertsEnabled: zod.boolean(),
   maxDailyTrades: zod.number(),
   maxOpportunities: zod.number(),
+  dailyReportHour: zod.number(),
+  stopLossPct: zod.number(),
+  takeProfitPct: zod.number(),
+  trendFilterEnabled: zod.boolean(),
 });
 
 /**
@@ -273,6 +286,8 @@ export const RunBacktestResponse = zod.object({
   avgReturn: zod.number(),
   maxDrawdown: zod.number(),
   sharpeRatio: zod.number(),
+  totalFeesPaid: zod.number(),
+  avgSpreadPct: zod.number(),
   trades: zod.array(
     zod.object({
       date: zod.string(),
@@ -284,6 +299,8 @@ export const RunBacktestResponse = zod.object({
       pnl: zod.number(),
       pnlPct: zod.number(),
       outcome: zod.enum(["win", "loss"]),
+      feePaid: zod.number(),
+      spread: zod.number(),
     }),
   ),
   equityCurve: zod.array(

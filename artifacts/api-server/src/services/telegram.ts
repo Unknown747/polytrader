@@ -214,3 +214,64 @@ export async function notifyExpiringPosition(params: {
     `⏱ Resolves in ~${hoursLeft}h`
   );
 }
+
+export async function notifyStopLossTriggered(params: {
+  question: string;
+  side: "YES" | "NO";
+  entryPrice: number;
+  currentPrice: number;
+  pnl: number;
+  pnlPct: number;
+}): Promise<void> {
+  if (!isTelegramConfigured()) return;
+  const { question, side, entryPrice, currentPrice, pnl, pnlPct } = params;
+  const sideEmoji = side === "YES" ? "✅" : "❌";
+  await sendMessage(
+    `🛑 <b>Stop-Loss Triggered</b>\n\n` +
+    `<b>${question}</b>\n\n` +
+    `${sideEmoji} ${side} | Entry: ${(entryPrice * 100).toFixed(0)}¢ → Now: <b>${(currentPrice * 100).toFixed(0)}¢</b>\n` +
+    `Loss: <b>-$${Math.abs(pnl).toFixed(2)} (${pnlPct.toFixed(1)}%)</b>\n` +
+    `Position flagged for exit to limit further downside.`
+  );
+}
+
+export async function notifyTakeProfitTriggered(params: {
+  question: string;
+  side: "YES" | "NO";
+  entryPrice: number;
+  currentPrice: number;
+  pnl: number;
+  pnlPct: number;
+}): Promise<void> {
+  if (!isTelegramConfigured()) return;
+  const { question, side, entryPrice, currentPrice, pnl, pnlPct } = params;
+  const sideEmoji = side === "YES" ? "✅" : "❌";
+  await sendMessage(
+    `🎯 <b>Take-Profit Triggered</b>\n\n` +
+    `<b>${question}</b>\n\n` +
+    `${sideEmoji} ${side} | Entry: ${(entryPrice * 100).toFixed(0)}¢ → Now: <b>${(currentPrice * 100).toFixed(0)}¢</b>\n` +
+    `Profit: <b>+$${pnl.toFixed(2)} (+${pnlPct.toFixed(1)}%)</b>\n` +
+    `Target reached — time to lock in gains.`
+  );
+}
+
+export async function notifyMarketResolved(params: {
+  question: string;
+  side: "YES" | "NO";
+  outcome: "win" | "loss";
+  pnl: number;
+  finalPrice: number;
+}): Promise<void> {
+  if (!isTelegramConfigured()) return;
+  const { question, side, outcome, pnl, finalPrice } = params;
+  const sideEmoji = side === "YES" ? "✅" : "❌";
+  const outcomeEmoji = outcome === "win" ? "🏆" : "💸";
+  const pnlSign = pnl >= 0 ? "+" : "";
+  await sendMessage(
+    `${outcomeEmoji} <b>Market Resolved — ${outcome === "win" ? "WIN" : "LOSS"}</b>\n\n` +
+    `<b>${question}</b>\n\n` +
+    `${sideEmoji} ${side} resolved at <b>${(finalPrice * 100).toFixed(0)}¢</b>\n` +
+    `P&L: <b>${pnlSign}$${pnl.toFixed(2)}</b>`
+  );
+}
+

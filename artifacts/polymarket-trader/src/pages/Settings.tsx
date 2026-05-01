@@ -6,10 +6,11 @@ import {
   useGetWalletStatus,
   useTestTelegram,
 } from "@workspace/api-client-react";
-import { Settings2, Send, Wallet, Bot, AlertCircle, CheckCircle2, Zap, Activity, TrendingUp, PlayCircle, RotateCcw, Database } from "lucide-react";
+import { Settings2, Send, Wallet, Bot, AlertCircle, CheckCircle2, Zap, Activity, TrendingUp, PlayCircle, RotateCcw, Database, ChevronRight, Key, Shield, Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 
 interface AutoTradingStatus {
@@ -101,7 +102,238 @@ type StrategyConfig = {
   telegramAlertsEnabled: boolean;
   maxDailyTrades: number;
   maxOpportunities: number;
+  dailyReportHour: number;
+  stopLossPct: number;
+  takeProfitPct: number;
+  trendFilterEnabled: boolean;
 };
+
+const WIZARD_STEPS = [
+  {
+    id: "privatekey",
+    label: "Wallet Key",
+    icon: Key,
+    title: "Step 1 — Polygon Wallet Private Key",
+    description: "Your wallet private key is used to sign orders on-chain. Never share it.",
+    fields: [{ key: "POLYMARKET_PRIVATE_KEY", label: "Private Key", placeholder: "0x…", type: "password" }],
+    hint: "Export from MetaMask: Account → Three dots → Account details → Export private key",
+  },
+  {
+    id: "api",
+    label: "API Credentials",
+    icon: Shield,
+    title: "Step 2 — Polymarket L2 API Credentials",
+    description: "Used to sign REST requests to the CLOB order book.",
+    fields: [
+      { key: "POLYMARKET_API_KEY", label: "API Key", placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", type: "text" },
+      { key: "POLYMARKET_API_SECRET", label: "API Secret", placeholder: "your-api-secret", type: "password" },
+      { key: "POLYMARKET_API_PASSPHRASE", label: "API Passphrase", placeholder: "your-passphrase", type: "password" },
+    ],
+    hint: "Get these from polymarket.com → Account → API Keys → Create key",
+  },
+  {
+    id: "telegram",
+    label: "Telegram",
+    icon: Bell,
+    title: "Step 3 — Telegram Notifications (Optional)",
+    description: "Receive trade alerts, P&L reports and market resolution notifications.",
+    fields: [
+      { key: "TELEGRAM_BOT_TOKEN", label: "Bot Token", placeholder: "123456:ABC-DEF…", type: "password" },
+      { key: "TELEGRAM_CHAT_ID", label: "Chat ID", placeholder: "-100123456789", type: "text" },
+    ],
+    hint: "Create a bot via @BotFather → /newbot. Get Chat ID from api.telegram.org/bot<TOKEN>/getUpdates after messaging your bot.",
+  },
+];
+
+interface WizardValues { [key: string]: string }
+
+async function saveCredential(key: string, value: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${import.meta.env.BASE_URL}api/credentials`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, value }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+function CredentialWizard({ walletConfigured, apiConfigured, telegramConfigured }: {
+  walletConfigured: boolean;
+  apiConfigured: boolean;
+  telegramConfigured: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [step, setStep] = useState(0);
+  const [values, setValues] = useState<WizardValues>({});
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const allConfigured = walletConfigured && apiConfigured && telegramConfigured;
+  const currentStep = WIZARD_STEPS[step];
+  const StepIcon = currentStep.icon;
+
+  function setVal(key: string, val: string) {
+    setValues((prev) => ({ ...prev, [key]: val }));
+    setSaved(false);
+    setError(null);
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    const results = await Promise.all(
+      currentStep.fields.map(async (f) => {
+        const val = values[f.key] ?? "";
+        if (!val.trim()) return true;
+        return saveCredential(f.key, val.trim());
+      })
+    );
+    setSaving(false);
+    if (results.every(Boolean)) {
+      setSaved(true);
+    } else {
+      setError("Failed to save some credentials. Check your connection.");
+    }
+  }
+
+  function handleNext() {
+    if (step < WIZARD_STEPS.length - 1) {
+      setStep(step + 1);
+      setSaved(false);
+      setError(null);
+    } else {
+      setOpen(false);
+      setStep(0);
+    }
+  }
+
+  const stepDone = [walletConfigured, apiConfigured, telegramConfigured];
+
+  if (!open) {
+    return (
+      <div className="mt-4 rounded-lg border border-dashed border-border p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex gap-1.5">
+              {WIZARD_STEPS.map((s, i) => (
+                <div
+                  key={s.id}
+                  className={cn(
+                    "h-2 w-2 rounded-full",
+                    stepDone[i] ? "bg-yes" : "bg-muted"
+                  )}
+                  title={s.label}
+                />
+              ))}
+            </div>
+            <span className="text-xs text-muted-foreground">
+              {stepDone.filter(Boolean).length} / {WIZARD_STEPS.length} configured
+              {allConfigured && " — All credentials set!"}
+            </span>
+          </div>
+          <Button
+            size="sm"
+            variant={allConfigured ? "outline" : "default"}
+            className="h-7 text-xs gap-1.5"
+            onClick={() => { setOpen(true); setStep(allConfigured ? 0 : stepDone.findIndex((d) => !d)); }}
+          >
+            {allConfigured ? "Review" : "Setup Wizard"}
+            <ChevronRight className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-4 rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {WIZARD_STEPS.map((s, i) => {
+            const Icon = s.icon;
+            return (
+              <button
+                key={s.id}
+                onClick={() => { setStep(i); setSaved(false); setError(null); }}
+                className={cn(
+                  "flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full transition-colors",
+                  i === step
+                    ? "bg-primary text-primary-foreground"
+                    : stepDone[i]
+                    ? "bg-yes/10 text-yes"
+                    : "bg-muted text-muted-foreground"
+                )}
+              >
+                {stepDone[i] && i !== step ? (
+                  <CheckCircle2 className="h-3 w-3" />
+                ) : (
+                  <Icon className="h-3 w-3" />
+                )}
+                {s.label}
+              </button>
+            );
+          })}
+        </div>
+        <button onClick={() => setOpen(false)} className="text-xs text-muted-foreground hover:text-foreground">✕</button>
+      </div>
+
+      <div>
+        <div className="flex items-center gap-2 mb-1">
+          <StepIcon className="h-3.5 w-3.5 text-primary" />
+          <span className="text-sm font-semibold text-foreground">{currentStep.title}</span>
+        </div>
+        <p className="text-xs text-muted-foreground">{currentStep.description}</p>
+      </div>
+
+      <div className="space-y-3">
+        {currentStep.fields.map((f) => (
+          <div key={f.key} className="space-y-1">
+            <Label className="text-xs">{f.label}</Label>
+            <Input
+              type={f.type}
+              placeholder={f.placeholder}
+              value={values[f.key] ?? ""}
+              onChange={(e) => setVal(f.key, e.target.value)}
+              className="h-8 text-xs font-mono"
+            />
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-md bg-background/60 border border-border p-2.5 text-[11px] text-muted-foreground">
+        <span className="font-medium text-foreground">Tip: </span>{currentStep.hint}
+      </div>
+
+      {error && <p className="text-xs text-no">{error}</p>}
+
+      <div className="flex items-center gap-3">
+        <Button size="sm" onClick={handleSave} disabled={saving} className="h-7 text-xs">
+          {saving ? "Saving…" : "Save credentials"}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleNext}
+          className="h-7 text-xs gap-1"
+          disabled={saving}
+        >
+          {step < WIZARD_STEPS.length - 1 ? "Next step" : "Done"}
+          <ChevronRight className="h-3.5 w-3.5" />
+        </Button>
+        {saved && (
+          <span className="text-xs text-yes flex items-center gap-1">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Saved
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function SectionTitle({ icon: Icon, title, description }: {
   icon: React.ElementType;
@@ -241,20 +473,11 @@ export default function Settings() {
           />
         </div>
 
-        <div className="mt-4 rounded-lg bg-background/60 border border-border p-3.5 text-xs text-muted-foreground leading-relaxed">
-          <p className="font-medium text-foreground mb-1 flex items-center gap-1.5">
-            <AlertCircle className="h-3.5 w-3.5 text-yellow-400" />
-            How to connect
-          </p>
-          <p>Set these environment secrets to enable live trading:</p>
-          <ul className="mt-1.5 space-y-0.5 font-mono text-[11px]">
-            <li><span className="text-primary">POLYMARKET_PRIVATE_KEY</span> — Polygon wallet private key</li>
-            <li><span className="text-primary">POLYMARKET_API_KEY</span> — Polymarket L2 API key</li>
-            <li><span className="text-primary">POLYMARKET_API_SECRET</span> — API secret</li>
-            <li><span className="text-primary">POLYMARKET_API_PASSPHRASE</span> — API passphrase</li>
-          </ul>
-          <p className="mt-2">Get L2 credentials from <span className="text-primary">polymarket.com → Account → API Keys</span></p>
-        </div>
+        <CredentialWizard
+          walletConfigured={wallet?.connected ?? false}
+          apiConfigured={wallet?.hasApiCredentials ?? false}
+          telegramConfigured={wallet?.telegramConfigured ?? false}
+        />
       </div>
 
       <div className="rounded-xl border border-border bg-card p-5 mb-5">
@@ -402,6 +625,48 @@ export default function Settings() {
               <div className="space-y-1.5">
                 <Label className="text-xs">Max opportunities shown</Label>
                 <Input type="number" value={form.maxOpportunities} onChange={(e) => setField("maxOpportunities", e.target.value)} min={5} max={100} />
+              </div>
+            </div>
+
+            <div className="border-t border-border/50 pt-4 space-y-4">
+              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Risk Management</div>
+
+              <Toggle
+                checked={form.trendFilterEnabled}
+                onChange={(v) => setField("trendFilterEnabled", v)}
+                label="Enable price trend filter (skips downtrending opportunities)"
+              />
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs">Stop-Loss threshold</Label>
+                  <span className="text-xs font-mono text-no font-semibold">-{form.stopLossPct}%</span>
+                </div>
+                <Slider
+                  min={5}
+                  max={60}
+                  step={5}
+                  value={[form.stopLossPct]}
+                  onValueChange={([v]) => setField("stopLossPct", String(v))}
+                  className="w-full"
+                />
+                <p className="text-[11px] text-muted-foreground">Alert sent when position P&L drops below this threshold</p>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs">Take-Profit threshold</Label>
+                  <span className="text-xs font-mono text-yes font-semibold">+{form.takeProfitPct}%</span>
+                </div>
+                <Slider
+                  min={10}
+                  max={200}
+                  step={10}
+                  value={[form.takeProfitPct]}
+                  onValueChange={([v]) => setField("takeProfitPct", String(v))}
+                  className="w-full"
+                />
+                <p className="text-[11px] text-muted-foreground">Alert sent when position P&L exceeds this threshold</p>
               </div>
             </div>
 

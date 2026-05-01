@@ -1,10 +1,11 @@
 import { useListPositions } from "@workspace/api-client-react";
 import { Link } from "wouter";
-import { TrendingUp, TrendingDown, ExternalLink, Download } from "lucide-react";
+import { TrendingUp, TrendingDown, ExternalLink, Download, Wifi, WifiOff } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { usePriceStream } from "@/hooks/usePriceStream";
 
 function handleExport() {
   const url = `${import.meta.env.BASE_URL}api/portfolio/export?type=positions`;
@@ -15,17 +16,35 @@ function handleExport() {
 }
 
 export default function Positions() {
-  const { data: positions, isLoading } = useListPositions({ query: { refetchInterval: 30000 } });
+  const { data: positions, isLoading } = useListPositions({ query: { refetchInterval: 60000 } });
+  const { prices: livePrices, connected: sseConnected } = usePriceStream();
 
-  const totalPnl = positions?.reduce((sum, p) => sum + p.pnl, 0) ?? 0;
-  const totalValue = positions?.reduce((sum, p) => sum + p.value, 0) ?? 0;
+  const enrichedPositions = positions?.map((pos) => {
+    const live = livePrices.get(pos.marketId);
+    if (!live) return pos;
+    const currentPrice = pos.side === "YES" ? live.yesPrice : live.noPrice;
+    const value = pos.shares * currentPrice;
+    const costBasis = pos.shares * pos.avgPrice;
+    const pnl = value - costBasis;
+    const pnlPercent = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
+    return { ...pos, currentPrice, value, pnl, pnlPercent };
+  }) ?? positions;
+
+  const totalPnl = enrichedPositions?.reduce((sum, p) => sum + p.pnl, 0) ?? 0;
+  const totalValue = enrichedPositions?.reduce((sum, p) => sum + p.value, 0) ?? 0;
 
   return (
     <div className="p-6 space-y-5">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-foreground">Positions</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Open positions · Auto-refreshes every 30s</p>
+          <div className="flex items-center gap-2 mt-0.5">
+            <p className="text-sm text-muted-foreground">Open positions</p>
+            <span className={cn("flex items-center gap-1 text-xs", sseConnected ? "text-yes" : "text-muted-foreground")}>
+              {sseConnected ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
+              {sseConnected ? "Live prices" : "Offline"}
+            </span>
+          </div>
         </div>
         <Button
           variant="outline"
@@ -38,7 +57,7 @@ export default function Positions() {
         </Button>
       </div>
 
-      {positions && (
+      {enrichedPositions && (
         <div className="grid grid-cols-3 gap-4">
           <div className="rounded-xl border border-border bg-card p-4">
             <div className="text-xs text-muted-foreground mb-1">Total Value</div>
@@ -52,7 +71,7 @@ export default function Positions() {
           </div>
           <div className="rounded-xl border border-border bg-card p-4">
             <div className="text-xs text-muted-foreground mb-1">Open Positions</div>
-            <div className="text-lg font-bold font-mono text-foreground">{positions.length}</div>
+            <div className="text-lg font-bold font-mono text-foreground">{enrichedPositions.length}</div>
           </div>
         </div>
       )}
@@ -63,14 +82,15 @@ export default function Positions() {
             <Skeleton key={i} className="h-20 rounded-xl" />
           ))}
         </div>
-      ) : !positions || positions.length === 0 ? (
+      ) : !enrichedPositions || enrichedPositions.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           No open positions
         </div>
       ) : (
         <div className="space-y-2">
-          {positions.map((pos) => {
+          {enrichedPositions.map((pos) => {
             const pnlPositive = pos.pnl >= 0;
+            const hasLive = livePrices.has(pos.marketId);
             return (
               <div
                 key={pos.id}
@@ -90,6 +110,9 @@ export default function Positions() {
                       >
                         {pos.side}
                       </Badge>
+                      {hasLive && (
+                        <span className="text-[9px] text-yes font-medium">LIVE</span>
+                      )}
                       <Link href={`/markets/${pos.marketId}`}>
                         <ExternalLink className="h-3 w-3 text-muted-foreground hover:text-primary cursor-pointer" />
                       </Link>
@@ -105,7 +128,7 @@ export default function Positions() {
                         Avg <span className="font-mono">{(pos.avgPrice * 100).toFixed(0)}¢</span>
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        Now <span className="font-mono">{(pos.currentPrice * 100).toFixed(0)}¢</span>
+                        Now <span className={cn("font-mono", hasLive && "text-yes")}>{(pos.currentPrice * 100).toFixed(0)}¢</span>
                       </div>
                     </div>
                   </div>

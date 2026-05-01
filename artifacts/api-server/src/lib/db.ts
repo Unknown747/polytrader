@@ -97,6 +97,13 @@ db.exec(`
     triggered_at TEXT,
     created_at TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS resolved_market_notifications (
+    position_id TEXT NOT NULL,
+    side TEXT NOT NULL,
+    notified_at TEXT NOT NULL,
+    PRIMARY KEY (position_id, side)
+  );
 `);
 
 logger.info({ path: DB_PATH }, "SQLite database opened (poly.db)");

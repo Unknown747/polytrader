@@ -18,6 +18,8 @@ export interface BacktestResult {
   avgReturn: number;
   maxDrawdown: number;
   sharpeRatio: number;
+  totalFeesPaid: number;
+  avgSpreadPct: number;
   trades: BacktestTrade[];
   equityCurve: PnlPoint[];
 }

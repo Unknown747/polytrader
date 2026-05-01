@@ -24,12 +24,12 @@ pnpm monorepo with the following artifacts and libraries:
 - **Dashboard** — Portfolio summary stats, cumulative P&L area chart, trending markets list
 - **Markets** — Browse/search/filter prediction markets (real Polymarket Gamma API with demo fallback)
 - **Market Detail** — Market info + buy/sell YES/NO order form + **30-day price history chart** + **watchlist star** + **price alert bell** (set Telegram alert on target price)
-- **Positions** — Open positions with unrealized P&L (auto-refreshes every 30s, **Export CSV**)
-- **Orders** — Order history with cancel support (auto-refreshes every 30s, summary stats, **Export CSV**)
-- **Portfolio** — Cumulative P&L chart, daily P&L bar chart, **Portfolio Allocation donut chart**, position breakdown, **live CLOB P&L panel**, **Export P&L + Positions CSV** (auto-refreshes every 30s)
-- **Strategy Scanner** — Scans near-resolution high-probability markets (>80%, <21 days), composite scoring across 5 factors, half-Kelly sizing
-- **Backtester** — Simulates strategy on historical data, shows equity curve, win rate, Sharpe ratio, trade log
-- **Settings** — Wallet status (real USDC balance from CLOB), Telegram setup, strategy + auto-trading config, auto-trading status panel with recent trades, USDC balance, daily slot counter, and manual scan trigger
+- **Positions** — Open positions with unrealized P&L; **SSE live prices** (push every 15s via `/api/prices/stream`), LIVE badge on positions with fresh data, Export CSV
+- **Orders** — Order history with cancel support (auto-refreshes, summary stats, Export CSV)
+- **Portfolio** — Cumulative P&L chart, daily P&L bar chart, Portfolio Allocation donut chart, position breakdown, live CLOB P&L panel, Export P&L + Positions CSV
+- **Strategy Scanner** — Scans near-resolution high-probability markets; composite scoring (5 factors); **price trend filter** ("up"/"flat"/"down" badge) using 14-day linear regression; half-Kelly sizing; trend badges on each opportunity card
+- **Backtester** — Realistic simulation with **CLOB taker fee (1%)** + **bid-ask spread simulation** (0.3–2.5% by liquidity tier); shows total fees paid, avg spread, Fee column in trade log
+- **Settings** — **3-step Credential Setup Wizard** (Private Key → API Credentials → Telegram) with step progress dots, per-field save; **Stop-Loss/Take-Profit sliders** (SL: 5–60%, TP: 10–200%); trend filter toggle; Telegram test; auto-trading status panel
 
 ## Backend Services
 

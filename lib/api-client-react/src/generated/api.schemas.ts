@@ -148,6 +148,15 @@ export const OpportunityRiskLevel = {
   high: "high",
 } as const;
 
+export type OpportunityPriceTrend =
+  (typeof OpportunityPriceTrend)[keyof typeof OpportunityPriceTrend];
+
+export const OpportunityPriceTrend = {
+  up: "up",
+  flat: "flat",
+  down: "down",
+} as const;
+
 export interface Opportunity {
   marketId: string;
   question: string;
@@ -165,7 +174,8 @@ export interface Opportunity {
   liquidity: number;
   compositeScore: number;
   rationale: string;
-  conditionId?: string;
+  conditionId: string;
+  priceTrend: OpportunityPriceTrend;
 }
 
 export interface StrategyConfig {
@@ -181,6 +191,10 @@ export interface StrategyConfig {
   telegramAlertsEnabled: boolean;
   maxDailyTrades: number;
   maxOpportunities: number;
+  dailyReportHour: number;
+  stopLossPct: number;
+  takeProfitPct: number;
+  trendFilterEnabled: boolean;
 }
 
 export interface BacktestRequest {
@@ -217,6 +231,8 @@ export interface BacktestTrade {
   pnl: number;
   pnlPct: number;
   outcome: BacktestTradeOutcome;
+  feePaid: number;
+  spread: number;
 }
 
 export interface BacktestResult {
@@ -229,6 +245,8 @@ export interface BacktestResult {
   avgReturn: number;
   maxDrawdown: number;
   sharpeRatio: number;
+  totalFeesPaid: number;
+  avgSpreadPct: number;
   trades: BacktestTrade[];
   equityCurve: PnlPoint[];
 }

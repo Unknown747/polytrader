@@ -3,7 +3,7 @@ import {
   useGetOpportunities,
   useGetWalletStatus,
 } from "@workspace/api-client-react";
-import { RefreshCw, Zap, TrendingUp, Clock, ShieldCheck, AlertTriangle } from "lucide-react";
+import { RefreshCw, Zap, TrendingUp, TrendingDown, Minus, Clock, ShieldCheck, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -41,9 +41,15 @@ function OpportunityCard({
     liquidity: number;
     compositeScore: number;
     rationale: string;
+    priceTrend?: "up" | "flat" | "down";
   };
 }) {
   const RiskIcon = RISK_ICON[op.riskLevel];
+  const trendConfig = {
+    up: { icon: TrendingUp, label: "Trending up", cls: "text-yes" },
+    flat: { icon: Minus, label: "Flat trend", cls: "text-muted-foreground" },
+    down: { icon: TrendingDown, label: "Downtrend", cls: "text-no" },
+  };
   const isYes = op.recommendedSide === "YES";
   const scorePct = Math.round(op.compositeScore * 100);
   const scoreColor = scorePct >= 70 ? "text-yes" : scorePct >= 45 ? "text-yellow-400" : "text-no";
@@ -76,6 +82,16 @@ function OpportunityCard({
           <span className={cn("text-xs font-semibold", scoreColor)}>
             Score {scorePct}/100
           </span>
+          {op.priceTrend && (() => {
+            const t = trendConfig[op.priceTrend];
+            const TIcon = t.icon;
+            return (
+              <span className={cn("flex items-center gap-0.5 text-[10px]", t.cls)}>
+                <TIcon className="h-3 w-3" />
+                {t.label}
+              </span>
+            );
+          })()}
         </div>
       </div>
 

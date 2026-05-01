@@ -18,4 +18,6 @@ export interface BacktestTrade {
   pnl: number;
   pnlPct: number;
   outcome: BacktestTradeOutcome;
+  feePaid: number;
+  spread: number;
 }

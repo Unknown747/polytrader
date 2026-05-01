@@ -5,6 +5,7 @@
  * Polymarket Trading API
  * OpenAPI spec version: 0.1.0
  */
+import type { OpportunityPriceTrend } from "./opportunityPriceTrend";
 import type { OpportunityRecommendedSide } from "./opportunityRecommendedSide";
 import type { OpportunityRiskLevel } from "./opportunityRiskLevel";
 
@@ -25,5 +26,6 @@ export interface Opportunity {
   liquidity: number;
   compositeScore: number;
   rationale: string;
-  conditionId?: string;
+  conditionId: string;
+  priceTrend: OpportunityPriceTrend;
 }
