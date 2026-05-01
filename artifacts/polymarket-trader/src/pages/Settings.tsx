@@ -110,6 +110,7 @@ type StrategyConfig = {
   takeProfitTier2Pct: number;
   takeProfitTier3Pct: number;
   trendFilterEnabled: boolean;
+  autoCapital: boolean;
 };
 
 const WIZARD_STEPS = [
@@ -448,6 +449,91 @@ function MinimumCapitalPanel({ bankroll, maxPositionPct, maxDailyTrades }: {
   );
 }
 
+function AutoCapitalPreview({
+  balance,
+  config,
+}: {
+  balance: number;
+  config: StrategyConfig;
+}) {
+  const MIN_ORDER = 1;
+  const minPctForMinOrder = balance > 0 ? (MIN_ORDER / balance) * 100 : 100;
+  const effectiveMaxPosPct = Math.min(25, Math.max(config.maxPositionPct, Math.ceil(minPctForMinOrder)));
+  const perTrade = (balance * effectiveMaxPosPct) / 100;
+  const canTrade = perTrade >= MIN_ORDER;
+
+  let mode: string, modeColor: string, modeBg: string;
+  if (balance < 20) {
+    mode = "🔴 Micro — Terlalu Kecil"; modeColor = "text-no"; modeBg = "bg-no/10 border-no/20";
+  } else if (balance < 50) {
+    mode = "🟡 Small Capital"; modeColor = "text-yellow-400"; modeBg = "bg-yellow-500/10 border-yellow-500/20";
+  } else if (balance < 200) {
+    mode = "🟢 Normal"; modeColor = "text-yes"; modeBg = "bg-yes/10 border-yes/20";
+  } else {
+    mode = "🟢 Comfortable"; modeColor = "text-yes"; modeBg = "bg-yes/10 border-yes/20";
+  }
+
+  const minLiq = balance < 50 ? 10_000 : config.minLiquidity;
+  const minEdge = balance < 20 ? 5 : balance < 50 ? 4 : Math.round(config.minEdge * 100);
+  const tradeCapacity = perTrade > 0 ? Math.floor(balance / perTrade) : 0;
+
+  const warnings: string[] = [];
+  if (!canTrade) warnings.push(`Per trade $${perTrade.toFixed(2)} < min $1 Polymarket — tidak bisa trade`);
+  if (balance < 50 && canTrade) warnings.push("Filter: hanya market likuiditas >$10,000");
+  if (balance < 50) warnings.push(`Min edge otomatis naik ke ${minEdge}% untuk modal kecil`);
+  if (balance < 20 && canTrade) {
+    const lossesToStop = Math.max(0, Math.floor((balance - 20) / perTrade));
+    warnings.push(`Hanya ${lossesToStop} loss berturut → bot berhenti`);
+  }
+
+  return (
+    <div className={cn("rounded-lg border p-3.5 space-y-3", modeBg)}>
+      <div className="flex items-center justify-between">
+        <span className={cn("text-xs font-semibold", modeColor)}>{mode}</span>
+        <span className="text-[10px] text-muted-foreground">Saldo: ${balance.toFixed(2)} USDC</span>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        <div className="rounded-md bg-background/60 p-2 text-center">
+          <div className="text-[10px] text-muted-foreground">Per Trade</div>
+          <div className={cn("font-bold text-sm", !canTrade ? "text-no" : "text-foreground")}>${perTrade.toFixed(2)}</div>
+          <div className="text-[10px] text-muted-foreground">@{effectiveMaxPosPct}%</div>
+        </div>
+        <div className="rounded-md bg-background/60 p-2 text-center">
+          <div className="text-[10px] text-muted-foreground">Kapasitas</div>
+          <div className="font-bold text-sm text-foreground">{tradeCapacity} trade</div>
+          <div className="text-[10px] text-muted-foreground">dari saldo</div>
+        </div>
+        <div className="rounded-md bg-background/60 p-2 text-center">
+          <div className="text-[10px] text-muted-foreground">Min Edge</div>
+          <div className="font-bold text-sm text-foreground">{minEdge}%</div>
+          <div className="text-[10px] text-muted-foreground">auto-adjusted</div>
+        </div>
+      </div>
+
+      <div className="rounded-md bg-background/50 border border-border/50 p-2.5 space-y-1.5">
+        <div className="text-[10px] font-semibold text-foreground">Penyesuaian aktif:</div>
+        <div className="text-[10px] text-muted-foreground space-y-0.5">
+          <div>• Max position: <span className="text-foreground font-medium">{effectiveMaxPosPct}%</span> {effectiveMaxPosPct !== config.maxPositionPct && `(dari config ${config.maxPositionPct}% → auto-naik)`}</div>
+          <div>• Min likuiditas: <span className="text-foreground font-medium">${minLiq.toLocaleString()}</span></div>
+          <div>• Min edge: <span className="text-foreground font-medium">{minEdge}%</span></div>
+        </div>
+      </div>
+
+      {warnings.length > 0 && (
+        <div className="space-y-1">
+          {warnings.map((w, i) => (
+            <div key={i} className={cn("text-[10px] flex items-start gap-1", !canTrade && i === 0 ? "text-no font-semibold" : "text-yellow-400")}>
+              <span className="shrink-0">{!canTrade && i === 0 ? "❌" : "⚠"}</span>
+              {w}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SectionTitle({ icon: Icon, title, description }: {
   icon: React.ElementType;
   title: string;
@@ -704,10 +790,59 @@ export default function Settings() {
               />
             </div>
 
+            {/* ── Auto Capital Mode ── */}
+            <div className="rounded-lg border border-border bg-background/50 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-foreground flex items-center gap-2">
+                    <DollarSign className="h-4 w-4 text-primary" />
+                    Auto Capital Mode
+                  </div>
+                  <div className="text-[11px] text-muted-foreground mt-0.5">
+                    Bot otomatis sesuaikan ukuran posisi berdasarkan saldo USDC nyata
+                  </div>
+                </div>
+                <Toggle
+                  checked={form.autoCapital ?? false}
+                  onChange={(v) => setField("autoCapital", v)}
+                  label=""
+                />
+              </div>
+
+              {form.autoCapital && autoStatus && (
+                <AutoCapitalPreview
+                  balance={autoStatus.usdcBalance}
+                  config={form}
+                />
+              )}
+
+              {form.autoCapital && !autoStatus && (
+                <div className="text-xs text-muted-foreground bg-background/60 rounded-lg p-3">
+                  Menunggu data saldo... Pastikan wallet terhubung untuk melihat preview.
+                </div>
+              )}
+
+              {!form.autoCapital && (
+                <div className="text-xs text-muted-foreground space-y-1 pt-1 border-t border-border/40">
+                  <p>Saat <strong className="text-foreground">nonaktif</strong>: bot pakai Bankroll statis dari config di bawah.</p>
+                  <p>Saat <strong className="text-foreground">aktif</strong>: bot baca saldo USDC real-time, hitung ukuran posisi otomatis, dan terapkan filter likuiditas jika modal kecil.</p>
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label className="text-xs">Bankroll ($)</Label>
-                <Input type="number" value={form.bankroll} onChange={(e) => setField("bankroll", e.target.value)} min={1} />
+                <Label className="text-xs">
+                  Bankroll ($)
+                  {form.autoCapital && <span className="ml-1 text-[10px] text-muted-foreground">(diabaikan saat Auto Capital aktif)</span>}
+                </Label>
+                <Input
+                  type="number"
+                  value={form.bankroll}
+                  onChange={(e) => setField("bankroll", e.target.value)}
+                  min={1}
+                  className={form.autoCapital ? "opacity-50" : ""}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Max position size (%)</Label>

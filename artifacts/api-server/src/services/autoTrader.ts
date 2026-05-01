@@ -1,5 +1,6 @@
 import { logger } from "../lib/db";
 import type { Opportunity, StrategyConfig } from "./strategy";
+import { computeAdaptiveProfile } from "./strategy";
 import { placeOrder, isClobConfigured, getUsdcBalance } from "./clob";
 import { portfolioState } from "../lib/state";
 import { notifyOrderFilled, notifyDailyReport } from "./telegram";
@@ -153,12 +154,33 @@ export async function executeOpportunities(
     return [];
   }
 
+  // ── Adaptive Capital ────────────────────────────────────────────────────────
+  const adaptive = config.autoCapital ? computeAdaptiveProfile(balance, config) : null;
+
+  if (adaptive) {
+    logger.info(
+      { mode: adaptive.mode, balance, perTrade: adaptive.perTradeAmount, effectivePct: adaptive.effectiveMaxPosPct },
+      "Auto-trading: adaptive capital mode active"
+    );
+    if (!adaptive.canTrade) {
+      logger.warn({ balance, perTrade: adaptive.perTradeAmount }, "Auto-trading: adaptive mode — balance too low to place any order");
+      return [];
+    }
+  }
+
+  const effectiveBankroll = adaptive ? adaptive.effectiveBankroll : config.bankroll;
+  const effectiveMaxPosPct = adaptive ? adaptive.effectiveMaxPosPct : config.maxPositionPct;
+  const effectiveMinEdge = adaptive ? adaptive.minEdgeRequired : config.minEdge;
+  const effectiveMinLiquidity = adaptive ? adaptive.minLiquidityRequired : config.minLiquidity;
+
   const eligibleOps = opportunities
     .filter((op) => {
-      if (op.edge < config.minEdge) return false;
+      if (op.edge < effectiveMinEdge) return false;
       if (op.compositeScore < 0.4) return false;
       if (shouldSkipMarket(op.marketId, op.recommendedSide)) return false;
       if (!op.conditionId) return false;
+      // Adaptive: small capital requires more liquid markets
+      if (adaptive && op.liquidity < effectiveMinLiquidity) return false;
       return true;
     })
     .slice(0, remaining);
@@ -171,8 +193,8 @@ export async function executeOpportunities(
   const executed: TradeRecord[] = [];
 
   for (const op of eligibleOps) {
-    const kellyAmount = config.bankroll * op.kellyFraction;
-    const maxAmount = (balance * config.maxPositionPct) / 100;
+    const kellyAmount = effectiveBankroll * op.kellyFraction;
+    const maxAmount = (balance * effectiveMaxPosPct) / 100;
     let amount = Math.min(
       kellyAmount,
       maxAmount,

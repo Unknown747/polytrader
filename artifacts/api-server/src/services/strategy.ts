@@ -22,6 +22,101 @@ export interface StrategyConfig {
   takeProfitTier2Pct: number;
   takeProfitTier3Pct: number;
   trendFilterEnabled: boolean;
+  autoCapital: boolean;
+}
+
+// ─── Adaptive Capital ───────────────────────────────────────────────────────
+
+export interface AdaptiveCapitalProfile {
+  effectiveBankroll: number;
+  effectiveMaxPosPct: number;
+  perTradeAmount: number;
+  minLiquidityRequired: number;
+  minEdgeRequired: number;
+  mode: "micro" | "small" | "normal" | "comfortable";
+  modeLabel: string;
+  tradeCapacity: number;        // how many max-size trades fit in balance
+  canTrade: boolean;
+  warnings: string[];
+}
+
+export function computeAdaptiveProfile(
+  actualBalance: number,
+  config: StrategyConfig
+): AdaptiveCapitalProfile {
+  const MIN_ORDER = 1;
+  const warnings: string[] = [];
+
+  // Determine mode
+  let mode: AdaptiveCapitalProfile["mode"];
+  let modeLabel: string;
+  if (actualBalance < 20) {
+    mode = "micro";
+    modeLabel = "Micro — terlalu kecil";
+  } else if (actualBalance < 50) {
+    mode = "small";
+    modeLabel = "Small Capital";
+  } else if (actualBalance < 200) {
+    mode = "normal";
+    modeLabel = "Normal";
+  } else {
+    mode = "comfortable";
+    modeLabel = "Comfortable";
+  }
+
+  // Effective bankroll — always the actual balance when autoCapital is on
+  const effectiveBankroll = actualBalance;
+
+  // Auto-scale max position pct: ensure per-trade >= $1
+  // E.g. balance=$20 → need pct >= 5% ($1). balance=$10 → need pct >= 10%
+  const minPctForMinOrder = actualBalance > 0 ? (MIN_ORDER / actualBalance) * 100 : 100;
+  const effectiveMaxPosPct = Math.min(
+    25, // hard ceiling
+    Math.max(config.maxPositionPct, Math.ceil(minPctForMinOrder))
+  );
+
+  const perTradeAmount = (effectiveBankroll * effectiveMaxPosPct) / 100;
+
+  // Small capital: require higher liquidity (to keep spread small)
+  let minLiquidityRequired = config.minLiquidity;
+  if (mode === "micro" || mode === "small") {
+    minLiquidityRequired = Math.max(config.minLiquidity, 10_000);
+    warnings.push("Hanya market dengan likuiditas >$10,000 (spread lebih kecil)");
+  }
+
+  // Small capital: require slightly higher edge to absorb spread cost
+  let minEdgeRequired = config.minEdge;
+  if (mode === "micro") {
+    minEdgeRequired = Math.max(config.minEdge, 0.05);
+    warnings.push("Min edge dinaikkan ke 5% untuk tutupi spread di modal kecil");
+  } else if (mode === "small") {
+    minEdgeRequired = Math.max(config.minEdge, 0.04);
+    warnings.push("Min edge dinaikkan ke 4% agar lebih selektif");
+  }
+
+  const canTrade = perTradeAmount >= MIN_ORDER;
+  if (!canTrade) {
+    warnings.push(`Per trade $${perTradeAmount.toFixed(2)} < minimum $1 Polymarket — tidak bisa trade`);
+  }
+
+  if (mode === "micro" && canTrade) {
+    warnings.push(`Hanya ${Math.floor((actualBalance - 20) / perTradeAmount)} loss berturut sebelum bot berhenti`);
+  }
+
+  const tradeCapacity = perTradeAmount > 0 ? Math.floor(actualBalance / perTradeAmount) : 0;
+
+  return {
+    effectiveBankroll,
+    effectiveMaxPosPct,
+    perTradeAmount,
+    minLiquidityRequired,
+    minEdgeRequired,
+    mode,
+    modeLabel,
+    tradeCapacity,
+    canTrade,
+    warnings,
+  };
 }
 
 export interface Opportunity {
@@ -66,6 +161,7 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   takeProfitTier2Pct: 50,
   takeProfitTier3Pct: 100,
   trendFilterEnabled: true,
+  autoCapital: false,
 };
 
 function loadConfigFromDb(): StrategyConfig {
