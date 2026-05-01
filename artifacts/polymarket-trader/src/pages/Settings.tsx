@@ -6,7 +6,7 @@ import {
   useGetWalletStatus,
   useTestTelegram,
 } from "@workspace/api-client-react";
-import { Settings2, Send, Wallet, Bot, AlertCircle, CheckCircle2, Zap, Activity, TrendingUp, PlayCircle } from "lucide-react";
+import { Settings2, Send, Wallet, Bot, AlertCircle, CheckCircle2, Zap, Activity, TrendingUp, PlayCircle, RotateCcw, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -65,6 +65,27 @@ function useTriggerScan() {
     }
   };
   return { trigger, pending, result };
+}
+
+function useResetDemo() {
+  const [pending, setPending] = useState(false);
+  const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const reset = async () => {
+    setPending(true);
+    setResult(null);
+    setConfirmOpen(false);
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}api/demo/reset`, { method: "POST" });
+      const data = await res.json() as { success: boolean; message: string };
+      setResult(data);
+    } catch {
+      setResult({ success: false, message: "Request failed" });
+    } finally {
+      setPending(false);
+    }
+  };
+  return { reset, pending, result, confirmOpen, setConfirmOpen };
 }
 
 type StrategyConfig = {
@@ -151,6 +172,7 @@ export default function Settings() {
   const { mutate: testTelegram, isPending: testing, data: telegramResult } = useTestTelegram();
   const { data: autoStatus } = useAutoTradingStatus();
   const { trigger: triggerScan, pending: scanPending, result: scanResult } = useTriggerScan();
+  const { reset: resetDemo, pending: resetPending, result: resetResult, confirmOpen, setConfirmOpen } = useResetDemo();
 
   const [form, setForm] = useState<StrategyConfig | null>(null);
 
@@ -275,6 +297,9 @@ export default function Settings() {
               { cmd: "/markets <keyword>", desc: "Search Polymarket markets by keyword" },
               { cmd: "/scan", desc: "Trigger a strategy scan for opportunities" },
               { cmd: "/status", desc: "Auto-trader status and daily trade count" },
+              { cmd: "/creds", desc: "Show which credentials are configured" },
+              { cmd: "/setcred <type> <value>", desc: "Set a credential — types: privatekey, apikey, apisecret, apipassphrase" },
+              { cmd: "/resetdemo", desc: "Reset all portfolio data back to demo values" },
               { cmd: "/help", desc: "List all available commands" },
             ].map(({ cmd, desc }) => (
               <div key={cmd} className="flex items-baseline gap-2">
@@ -526,6 +551,60 @@ export default function Settings() {
           </div>
         </div>
       )}
+
+      <div className="rounded-xl border border-border bg-card p-5 mt-5">
+        <SectionTitle
+          icon={Database}
+          title="Demo Data"
+          description="Reset portfolio to sample data with 22 orders, 8 positions, and 90 days of P&L history"
+        />
+        <p className="text-xs text-muted-foreground mb-4">
+          This will erase all current orders, positions, and P&L history and replace them with pre-built demo data.
+          Strategy configuration and credentials are not affected.
+        </p>
+        {!confirmOpen ? (
+          <div className="flex items-center gap-3">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setConfirmOpen(true)}
+              disabled={resetPending}
+              className="flex items-center gap-1.5"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Reset Demo Data
+            </Button>
+            {resetResult && (
+              <span className={cn(
+                "text-xs flex items-center gap-1",
+                resetResult.success ? "text-yes" : "text-no"
+              )}>
+                {resetResult.success
+                  ? <CheckCircle2 className="h-3.5 w-3.5" />
+                  : <AlertCircle className="h-3.5 w-3.5" />
+                }
+                {resetResult.success ? "Demo data restored" : resetResult.message}
+              </span>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-lg bg-yellow-500/10 border border-yellow-500/20 p-3.5 space-y-3">
+            <p className="text-xs text-yellow-600 dark:text-yellow-400 flex items-center gap-1.5">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span><b>Are you sure?</b> All orders, positions, and P&L history will be replaced with demo data.</span>
+            </p>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="destructive" onClick={resetDemo} disabled={resetPending} className="flex items-center gap-1.5">
+                <RotateCcw className="h-3.5 w-3.5" />
+                {resetPending ? "Resetting…" : "Yes, reset now"}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setConfirmOpen(false)} disabled={resetPending}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

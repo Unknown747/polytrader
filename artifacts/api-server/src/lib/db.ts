@@ -70,6 +70,11 @@ db.exec(`
     success INTEGER NOT NULL CHECK(success IN (0,1)),
     error TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS app_credentials (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
 `);
 
 logger.info({ path: DB_PATH }, "SQLite database opened (poly.db)");

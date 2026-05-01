@@ -8,6 +8,7 @@ import strategyRouter from "./strategy";
 import walletRouter from "./wallet";
 import telegramRouter from "./telegram";
 import autoTraderRouter from "./autoTrader";
+import demoRouter from "./demo";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use(strategyRouter);
 router.use(walletRouter);
 router.use(telegramRouter);
 router.use(autoTraderRouter);
+router.use(demoRouter);
 
 export default router;

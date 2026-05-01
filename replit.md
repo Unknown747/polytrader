@@ -58,6 +58,9 @@ pnpm monorepo with the following artifacts and libraries:
 | `/markets <keyword>` | Search Polymarket markets by keyword |
 | `/scan` | Trigger a strategy scan for opportunities (60s cooldown) |
 | `/status` | Auto-trader status: trades today, remaining slots, lifetime count, last scan/trade times |
+| `/creds` | Show status of all configured credentials (env or DB) |
+| `/setcred <type> <value>` | Save a credential to DB — types: `privatekey`, `apikey`, `apisecret`, `apipassphrase`, `chatid` |
+| `/resetdemo` | Reset all portfolio data (orders, positions, P&L) back to demo values |
 | `/help` | List all commands |
 
 **Config keys updateable via `/config <key> <value>`:**
@@ -118,7 +121,7 @@ pnpm monorepo with the following artifacts and libraries:
 
 ## Auto-Trading Setup
 
-Set these in Replit Secrets:
+Set these in Replit Secrets **or** via the Telegram bot with `/setcred`:
 
 | Variable | Description |
 |----------|-------------|
@@ -128,6 +131,8 @@ Set these in Replit Secrets:
 | `POLYMARKET_API_PASSPHRASE` | Polymarket CLOB L2 API passphrase |
 | `TELEGRAM_BOT_TOKEN` | (Optional) Telegram bot token for alerts and commands |
 | `TELEGRAM_CHAT_ID` | (Optional) Telegram chat/channel ID — bot only responds to this ID |
+
+Credentials can also be stored in SQLite via the Telegram bot (`/setcred privatekey 0x...`) and are read with env var priority. Stored in the `app_credentials` table.
 
 **Order signing flow:**
 1. EIP-712 typed-data signature using `POLYMARKET_PRIVATE_KEY` (ethers.js Wallet)

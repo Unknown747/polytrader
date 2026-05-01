@@ -1,6 +1,12 @@
 import { ethers } from "ethers";
 import { createHmac, randomBytes } from "crypto";
 import { logger } from "../lib/logger";
+import db from "../lib/db";
+
+function getDbCred(key: string): string | undefined {
+  const row = db.prepare("SELECT value FROM app_credentials WHERE key = ?").get(key) as { value: string } | undefined;
+  return row?.value || undefined;
+}
 
 const CLOB_URL = "https://clob.polymarket.com";
 const CHAIN_ID = 137;
@@ -47,10 +53,10 @@ export interface PlaceOrderParams {
 }
 
 function getCreds(): ClobCredentials | null {
-  const privateKey = process.env.POLYMARKET_PRIVATE_KEY;
-  const apiKey = process.env.POLYMARKET_API_KEY;
-  const apiSecret = process.env.POLYMARKET_API_SECRET;
-  const apiPassphrase = process.env.POLYMARKET_API_PASSPHRASE;
+  const privateKey = process.env.POLYMARKET_PRIVATE_KEY || getDbCred("POLYMARKET_PRIVATE_KEY");
+  const apiKey = process.env.POLYMARKET_API_KEY || getDbCred("POLYMARKET_API_KEY");
+  const apiSecret = process.env.POLYMARKET_API_SECRET || getDbCred("POLYMARKET_API_SECRET");
+  const apiPassphrase = process.env.POLYMARKET_API_PASSPHRASE || getDbCred("POLYMARKET_API_PASSPHRASE");
 
   if (!privateKey || !apiKey || !apiSecret || !apiPassphrase) return null;
 
@@ -62,7 +68,7 @@ export function isClobConfigured(): boolean {
 }
 
 function getWalletAddress(): string | null {
-  const pk = process.env.POLYMARKET_PRIVATE_KEY;
+  const pk = process.env.POLYMARKET_PRIVATE_KEY || getDbCred("POLYMARKET_PRIVATE_KEY");
   if (!pk) return null;
   try {
     const wallet = new ethers.Wallet(pk);
