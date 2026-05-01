@@ -55,10 +55,6 @@ export function throttledFetch(url: string, init?: RequestInit): Promise<Respons
   });
 }
 
-export function getQueueDepth(): number {
-  return queue.length;
-}
-
 export function getRateStats(): { requestsLastSecond: number; queueDepth: number } {
   resetWindowIfNeeded();
   return { requestsLastSecond: requestCount, queueDepth: queue.length };

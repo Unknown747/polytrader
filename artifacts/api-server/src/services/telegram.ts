@@ -386,8 +386,6 @@ export async function notifyMarketResolved(params: {
   );
 }
 
-
-
 export async function notifyEmergencyStop(params: {
   action: "stop" | "resume";
   cancelled?: number;

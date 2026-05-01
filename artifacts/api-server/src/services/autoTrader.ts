@@ -3,7 +3,7 @@ import type { Opportunity, StrategyConfig } from "./strategy";
 import { computeAdaptiveProfile } from "./strategy";
 import { placeOrder, isClobConfigured, getUsdcBalance } from "./clob";
 import { portfolioState } from "../lib/state";
-import { notifyOrderFilled, notifyDailyReport, notifyEmergencyStop } from "./telegram";
+import { notifyOrderFilled } from "./telegram";
 import db from "../lib/db";
 
 export interface TradeRecord {
@@ -231,12 +231,6 @@ let cachedBalance = 0;
 let balanceFetchedAt = 0;
 const BALANCE_CACHE_TTL = 60_000;
 
-function todayStart(): number {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}
-
 function tradesToday(): number {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
@@ -463,18 +457,6 @@ export async function executeOpportunities(
     }
 
     await new Promise((r) => setTimeout(r, 500));
-  }
-
-  if (executed.some((t) => t.success) && config.telegramAlertsEnabled) {
-    const summary = portfolioState.getSummary();
-    await notifyDailyReport({
-      pnl: summary.totalPnl,
-      pnlPct: summary.totalPnlPercent,
-      openPositions: summary.openPositions,
-      totalValue: summary.totalValue,
-      totalTrades: summary.totalTrades,
-      winRate: summary.winRate,
-    });
   }
 
   return executed;

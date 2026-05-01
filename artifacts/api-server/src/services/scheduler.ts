@@ -574,10 +574,9 @@ async function runScan() {
     await runAutoCompound();
 
     // Paper trading — run alongside real scanning
-    const cfg = getConfig();
-    if (cfg.paperTradingMode) {
-      await executePaperOpportunities(opportunities, cfg);
-      resolvePaperTradesNearResolution(priceMap, cfg);
+    if (config.paperTradingMode) {
+      await executePaperOpportunities(opportunities, config);
+      resolvePaperTradesNearResolution(priceMap, config);
     }
 
     if (scanCycleCount % 4 === 0) {
