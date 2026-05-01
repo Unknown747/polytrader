@@ -310,6 +310,62 @@ export async function notifyTakeProfitTierExecuted(params: {
   );
 }
 
+export async function notifyLowBalance(params: {
+  balance: number;
+  minRequired: number;
+  mode: string;
+  suggestion: string;
+}): Promise<void> {
+  if (!isTelegramConfigured()) return;
+  const { balance, minRequired, mode, suggestion } = params;
+  await sendMessage(
+    `⚠️ <b>Peringatan Saldo Rendah!</b>\n\n` +
+    `Saldo USDC: <b>$${balance.toFixed(2)}</b>\n` +
+    `Minimum yang disarankan: <b>$${minRequired.toFixed(2)}</b>\n` +
+    `Mode saat ini: <b>${mode}</b>\n\n` +
+    `💡 ${suggestion}\n\n` +
+    `<i>Bot tetap berjalan tapi akan lebih selektif. Top-up USDC untuk performa optimal.</i>`
+  );
+}
+
+export async function notifyAutoCompound(params: {
+  oldBankroll: number;
+  newBankroll: number;
+  profit: number;
+  profitPct: number;
+}): Promise<void> {
+  if (!isTelegramConfigured()) return;
+  const { oldBankroll, newBankroll, profit, profitPct } = params;
+  const sign = profit >= 0 ? "+" : "";
+  await sendMessage(
+    `♻️ <b>Auto-Compound Dijalankan</b>\n\n` +
+    `Bankroll diperbarui: <b>$${oldBankroll.toFixed(2)} → $${newBankroll.toFixed(2)}</b>\n` +
+    `Profit periode ini: <b>${sign}$${profit.toFixed(2)} (${sign}${profitPct.toFixed(2)}%)</b>\n\n` +
+    `<i>Ukuran posisi berikutnya dihitung dari bankroll baru.</i>`
+  );
+}
+
+export async function notifyPaperTrade(params: {
+  question: string;
+  side: "YES" | "NO";
+  price: number;
+  amount: number;
+  edge: number;
+  paperBalance: number;
+}): Promise<void> {
+  if (!isTelegramConfigured()) return;
+  const { question, side, price, amount, edge, paperBalance } = params;
+  const sideEmoji = side === "YES" ? "✅" : "❌";
+  await sendMessage(
+    `📝 <b>[PAPER TRADE] Simulasi Order</b>\n\n` +
+    `<b>${question}</b>\n` +
+    `${sideEmoji} ${side} @ ${(price * 100).toFixed(0)}¢ | Amount: $${amount.toFixed(2)}\n` +
+    `Edge: +${(edge * 100).toFixed(1)}%\n` +
+    `Paper balance sisa: <b>$${paperBalance.toFixed(2)}</b>\n\n` +
+    `<i>⚠️ Ini simulasi — bukan order nyata di Polymarket.</i>`
+  );
+}
+
 export async function notifyMarketResolved(params: {
   question: string;
   side: "YES" | "NO";

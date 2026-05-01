@@ -2,11 +2,10 @@ import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   useGetStrategyConfig,
-  useUpdateStrategyConfig,
   useGetWalletStatus,
   useTestTelegram,
 } from "@workspace/api-client-react";
-import { Settings2, Send, Wallet, Bot, AlertCircle, CheckCircle2, Zap, Activity, TrendingUp, PlayCircle, RotateCcw, Database, ChevronRight, Key, Shield, Bell, DollarSign, Info } from "lucide-react";
+import { Settings2, Send, Wallet, Bot, AlertCircle, CheckCircle2, Zap, Activity, TrendingUp, PlayCircle, RotateCcw, Database, ChevronRight, Key, Shield, Bell, DollarSign, Info, RefreshCw, Calculator, FlaskConical, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -111,6 +110,10 @@ type StrategyConfig = {
   takeProfitTier3Pct: number;
   trendFilterEnabled: boolean;
   autoCapital: boolean;
+  autoCompound: boolean;
+  categoryFilter: string;
+  paperTradingMode: boolean;
+  paperBankroll: number;
 };
 
 const WIZARD_STEPS = [
@@ -570,6 +573,165 @@ function StatusRow({ label, value, ok }: { label: string; value: string; ok: boo
   );
 }
 
+// ─── Mainnet Preflight Panel ─────────────────────────────────────────────────
+interface PreflightCheck { id: string; label: string; status: "pass" | "fail" | "warn"; detail: string }
+interface PreflightResult {
+  readiness: "ready" | "ready_with_warnings" | "not_ready";
+  passCount: number; failCount: number; warnCount: number; totalChecks: number;
+  usdcBalance: number; checks: PreflightCheck[]; summary: string;
+}
+
+function MainnetPreflightPanel() {
+  const [result, setResult] = useState<PreflightResult | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function runChecks() {
+    setLoading(true);
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}api/mainnet/preflight`);
+      setResult(await res.json() as PreflightResult);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const statusIcon = (s: "pass" | "fail" | "warn") =>
+    s === "pass" ? <CheckCircle2 className="h-4 w-4 text-yes shrink-0" />
+    : s === "fail" ? <AlertCircle className="h-4 w-4 text-no shrink-0" />
+    : <AlertCircle className="h-4 w-4 text-yellow-400 shrink-0" />;
+
+  const readinessCfg = result ? {
+    ready: { cls: "border-yes/30 bg-yes/5", text: "text-yes" },
+    ready_with_warnings: { cls: "border-yellow-500/30 bg-yellow-500/5", text: "text-yellow-400" },
+    not_ready: { cls: "border-no/30 bg-no/5", text: "text-no" },
+  }[result.readiness] : null;
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5 mt-5">
+      <SectionTitle
+        icon={ShieldCheck}
+        title="Mainnet Preflight Checklist"
+        description="Validasi semua syarat sebelum mulai live trading di Polymarket"
+      />
+      {!result ? (
+        <div className="text-center py-6">
+          <ShieldCheck className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground mb-4">Jalankan pengecekan untuk memastikan bot siap mainnet</p>
+          <Button onClick={() => void runChecks()} disabled={loading}>
+            {loading ? "Mengecek..." : "🚀 Jalankan Preflight Check"}
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className={cn("rounded-lg border p-4", readinessCfg?.cls)}>
+            <div className="flex items-center justify-between mb-2">
+              <span className={cn("text-sm font-bold", readinessCfg?.text)}>{result.summary}</span>
+              <Button size="sm" variant="outline" onClick={() => void runChecks()} disabled={loading} className="h-7 text-xs">
+                <RefreshCw className={cn("h-3 w-3 mr-1", loading && "animate-spin")} />
+                Ulangi
+              </Button>
+            </div>
+            <div className="flex gap-4 text-xs text-muted-foreground">
+              <span className="text-yes">✅ {result.passCount} lulus</span>
+              {result.warnCount > 0 && <span className="text-yellow-400">⚠️ {result.warnCount} peringatan</span>}
+              {result.failCount > 0 && <span className="text-no">❌ {result.failCount} gagal</span>}
+            </div>
+          </div>
+
+          <div className="divide-y divide-border rounded-lg border border-border overflow-hidden">
+            {result.checks.map((check) => (
+              <div key={check.id} className="flex items-start gap-3 p-3">
+                {statusIcon(check.status)}
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-foreground">{check.label}</div>
+                  <div className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{check.detail}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {result.readiness === "ready" && (
+            <div className="rounded-lg border border-yes/30 bg-yes/5 p-3 text-xs text-yes font-medium">
+              🎉 Bot 100% siap untuk mainnet Polymarket! Aktifkan auto-trading dan monitor dari Telegram.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Kelly Calculator Panel ──────────────────────────────────────────────────
+function KellyCalculatorPanel() {
+  const [prob, setProb] = useState(75);
+  const [odds, setOdds] = useState(90);
+  const [bankroll, setBankroll] = useState(500);
+  const [fraction, setFraction] = useState(0.25);
+
+  const p = prob / 100;
+  const decimalOdds = odds / (100 - odds);
+  const q = 1 - p;
+  const fullKelly = Math.max(0, (p * decimalOdds - q) / decimalOdds);
+  const fractionalKelly = fullKelly * fraction;
+  const recommendedBet = fractionalKelly * bankroll;
+  const expectedReturn = fullKelly * decimalOdds * p - fullKelly * q;
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5 mt-5">
+      <SectionTitle
+        icon={Calculator}
+        title="Kelly Calculator"
+        description="Hitung ukuran posisi optimal berdasarkan formula Kelly Criterion"
+      />
+      <div className="grid grid-cols-2 gap-4 mb-5">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Probabilitas menang (%)</Label>
+          <Input type="number" value={prob} onChange={(e) => setProb(Number(e.target.value))} min={51} max={99} />
+          <div className="text-[10px] text-muted-foreground">Contoh: YES price 75¢ → 75%</div>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Harga beli di CLOB (¢)</Label>
+          <Input type="number" value={odds} onChange={(e) => setOdds(Number(e.target.value))} min={51} max={99} />
+          <div className="text-[10px] text-muted-foreground">Harga saat kamu beli YES/NO (dalam sen)</div>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Bankroll ($)</Label>
+          <Input type="number" value={bankroll} onChange={(e) => setBankroll(Number(e.target.value))} min={10} />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Fraksi Kelly: {Math.round(fraction * 100)}%</Label>
+          <Slider min={10} max={100} step={5} value={[Math.round(fraction * 100)]} onValueChange={([v]) => setFraction(v / 100)} />
+          <div className="text-[10px] text-muted-foreground">25-50% Kelly = konservatif, 100% = agresif</div>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        <div className="rounded-lg bg-primary/5 border border-primary/20 p-3 text-center">
+          <div className="text-[10px] text-muted-foreground mb-1">Full Kelly</div>
+          <div className="text-lg font-bold text-primary">{(fullKelly * 100).toFixed(1)}%</div>
+          <div className="text-[10px] text-muted-foreground">dari bankroll</div>
+        </div>
+        <div className="rounded-lg bg-yes/5 border border-yes/20 p-3 text-center">
+          <div className="text-[10px] text-muted-foreground mb-1">Bet Optimal ({Math.round(fraction * 100)}% Kelly)</div>
+          <div className="text-lg font-bold text-yes">${recommendedBet.toFixed(2)}</div>
+          <div className="text-[10px] text-muted-foreground">{(fractionalKelly * 100).toFixed(1)}% dari ${bankroll}</div>
+        </div>
+        <div className="rounded-lg bg-background/50 border border-border p-3 text-center">
+          <div className="text-[10px] text-muted-foreground mb-1">Expected Return</div>
+          <div className={cn("text-lg font-bold", expectedReturn > 0 ? "text-yes" : "text-no")}>
+            {(expectedReturn * 100).toFixed(1)}%
+          </div>
+          <div className="text-[10px] text-muted-foreground">per unit bankroll</div>
+        </div>
+      </div>
+      {fullKelly <= 0 && (
+        <div className="mt-3 rounded-md bg-no/10 border border-no/20 p-3 text-xs text-no">
+          ⚠️ Kelly negatif — probabilitas tidak cukup tinggi untuk edge di harga ini. Jangan trade.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Toggle({ checked, onChange, label }: {
   checked: boolean;
   onChange: (v: boolean) => void;
@@ -599,26 +761,51 @@ function Toggle({ checked, onChange, label }: {
 export default function Settings() {
   const { data: wallet, isLoading: walletLoading } = useGetWalletStatus();
   const { data: config, isLoading: configLoading } = useGetStrategyConfig();
-  const { mutate: saveConfig, isPending: saving, isSuccess: saved } = useUpdateStrategyConfig();
   const { mutate: testTelegram, isPending: testing, data: telegramResult } = useTestTelegram();
   const { data: autoStatus } = useAutoTradingStatus();
   const { trigger: triggerScan, pending: scanPending, result: scanResult } = useTriggerScan();
   const { reset: resetDemo, pending: resetPending, result: resetResult, confirmOpen, setConfirmOpen } = useResetDemo();
 
   const [form, setForm] = useState<StrategyConfig | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    if (config && !form) setForm({ ...config });
+    if (config && !form) {
+      setForm({
+        ...config,
+        autoCompound: (config as unknown as StrategyConfig).autoCompound ?? false,
+        categoryFilter: (config as unknown as StrategyConfig).categoryFilter ?? "",
+        paperTradingMode: (config as unknown as StrategyConfig).paperTradingMode ?? false,
+        paperBankroll: (config as unknown as StrategyConfig).paperBankroll ?? 1000,
+      });
+    }
   }, [config, form]);
 
   function setField(field: keyof StrategyConfig, val: string | boolean) {
-    setForm((prev) =>
-      prev ? { ...prev, [field]: typeof val === "boolean" ? val : parseFloat(val as string) || 0 } : prev
-    );
+    setForm((prev) => {
+      if (!prev) return prev;
+      if (typeof val === "boolean") return { ...prev, [field]: val };
+      const numVal = parseFloat(val as string);
+      if (field === "categoryFilter") return { ...prev, [field]: val as string };
+      return { ...prev, [field]: isNaN(numVal) ? 0 : numVal };
+    });
   }
 
-  function handleSave() {
-    if (form) saveConfig({ data: form });
+  async function handleSave() {
+    if (!form) return;
+    setSaving(true);
+    setSaved(false);
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}api/strategy/config`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      if (res.ok) setSaved(true);
+    } finally {
+      setSaving(false);
+    }
   }
 
   const isLoading = walletLoading || configLoading;
@@ -827,6 +1014,126 @@ export default function Settings() {
                   <p>Saat <strong className="text-foreground">nonaktif</strong>: bot pakai Bankroll statis dari config di bawah.</p>
                   <p>Saat <strong className="text-foreground">aktif</strong>: bot baca saldo USDC real-time, hitung ukuran posisi otomatis, dan terapkan filter likuiditas jika modal kecil.</p>
                 </div>
+              )}
+            </div>
+
+            {/* ── Auto-Compound ── */}
+            <div className="rounded-lg border border-border bg-background/50 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-foreground flex items-center gap-2">
+                    <RefreshCw className="h-4 w-4 text-primary" />
+                    Auto-Compound Profit
+                  </div>
+                  <div className="text-[11px] text-muted-foreground mt-0.5">
+                    Reinvest keuntungan ke bankroll otomatis setiap hari (max 1x/24 jam)
+                  </div>
+                </div>
+                <Toggle
+                  checked={form.autoCompound ?? false}
+                  onChange={(v) => setField("autoCompound", v)}
+                  label=""
+                />
+              </div>
+              {form.autoCompound && (
+                <div className="flex items-center gap-2 rounded-md bg-yes/10 border border-yes/20 px-3 py-2">
+                  <span className="text-[11px] text-yes font-medium">
+                    ✅ Aktif — bot akan reinvest profit ke bankroll setiap hari dan kirim notifikasi Telegram
+                  </span>
+                </div>
+              )}
+              {!form.autoCompound && (
+                <div className="text-[11px] text-muted-foreground">
+                  Saat aktif: setiap scan harian, bot menghitung total P&L dari posisi closed, lalu menambahkan profit ke bankroll. Butuh Telegram untuk notifikasi.
+                </div>
+              )}
+            </div>
+
+            {/* ── Category Filter ── */}
+            <div className="rounded-lg border border-border bg-background/50 p-4 space-y-3">
+              <div>
+                <div className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-primary" />
+                  Category Filter
+                </div>
+                <div className="text-[11px] text-muted-foreground mt-0.5">
+                  Batasi scanner hanya ke kategori market tertentu (kosongkan = semua kategori)
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Kategori (pisah dengan koma)</Label>
+                <Input
+                  type="text"
+                  placeholder="Contoh: Politics, Sports, Crypto"
+                  value={form.categoryFilter ?? ""}
+                  onChange={(e) => setField("categoryFilter", e.target.value)}
+                  className="text-sm"
+                />
+              </div>
+              <div className="text-[10px] text-muted-foreground">
+                Kategori umum Polymarket: <span className="text-foreground">Politics, Sports, Crypto, Finance, Science, Pop Culture</span>
+              </div>
+              {form.categoryFilter && (
+                <div className="flex flex-wrap gap-1.5">
+                  {form.categoryFilter.split(",").map((c) => c.trim()).filter(Boolean).map((cat) => (
+                    <span key={cat} className="text-[10px] bg-primary/10 text-primary border border-primary/20 rounded px-2 py-0.5">
+                      {cat}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ── Paper Trading Mode ── */}
+            <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-foreground flex items-center gap-2">
+                    <FlaskConical className="h-4 w-4 text-yellow-400" />
+                    Paper Trading Mode
+                  </div>
+                  <div className="text-[11px] text-muted-foreground mt-0.5">
+                    Simulasi trading tanpa uang nyata — aman untuk test strategi
+                  </div>
+                </div>
+                <Toggle
+                  checked={form.paperTradingMode ?? false}
+                  onChange={(v) => setField("paperTradingMode", v)}
+                  label=""
+                />
+              </div>
+              {form.paperTradingMode && (
+                <>
+                  <div className="flex items-center gap-2 rounded-md bg-yellow-500/20 border border-yellow-500/30 px-3 py-2">
+                    <span className="text-[11px] text-yellow-400 font-medium">
+                      🧪 Paper Mode aktif — semua trade dieksekusi di simulasi, tidak ada uang nyata yang dipakai
+                    </span>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Paper Bankroll ($)</Label>
+                    <Input
+                      type="number"
+                      value={form.paperBankroll ?? 1000}
+                      onChange={(e) => setField("paperBankroll", e.target.value)}
+                      min={100}
+                      max={100000}
+                    />
+                    <div className="text-[10px] text-muted-foreground">Modal simulasi awal untuk paper trading. Hasil dilihat di halaman Analytics.</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10"
+                      onClick={async () => {
+                        await fetch(`${import.meta.env.BASE_URL}api/paper-trading/reset`, { method: "POST" });
+                      }}
+                    >
+                      <RotateCcw className="h-3 w-3 mr-1" />
+                      Reset Paper Portfolio
+                    </Button>
+                  </div>
+                </>
               )}
             </div>
 
@@ -1170,6 +1477,9 @@ export default function Settings() {
           </div>
         </div>
       )}
+
+      <MainnetPreflightPanel />
+      <KellyCalculatorPanel />
 
       <div className="rounded-xl border border-border bg-card p-5 mt-5">
         <SectionTitle

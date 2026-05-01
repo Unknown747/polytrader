@@ -23,6 +23,14 @@ export interface StrategyConfig {
   takeProfitTier3Pct: number;
   trendFilterEnabled: boolean;
   autoCapital: boolean;
+  // Auto-Compound: reinvest profits → bankroll updated after each scan
+  autoCompound: boolean;
+  // Category Filter: comma-separated list of allowed categories; empty = all
+  categoryFilter: string;
+  // Paper Trading: simulate orders without real capital
+  paperTradingMode: boolean;
+  // Paper bankroll for simulation
+  paperBankroll: number;
 }
 
 // ─── Adaptive Capital ───────────────────────────────────────────────────────
@@ -162,6 +170,10 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   takeProfitTier3Pct: 100,
   trendFilterEnabled: true,
   autoCapital: false,
+  autoCompound: false,
+  categoryFilter: "",
+  paperTradingMode: false,
+  paperBankroll: 1000,
 };
 
 function loadConfigFromDb(): StrategyConfig {
@@ -176,6 +188,8 @@ function loadConfigFromDb(): StrategyConfig {
     } else if (typeof defaultVal === "number") {
       const n = parseFloat(row.value);
       if (!isNaN(n)) (config as Record<string, unknown>)[key] = n;
+    } else if (typeof defaultVal === "string") {
+      (config as Record<string, unknown>)[key] = row.value;
     }
   }
   return config;

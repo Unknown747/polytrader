@@ -1,6 +1,6 @@
 import { logger } from "../lib/db";
 import { getCachedMarkets, invalidateCache } from "./polymarket";
-import { scanOpportunities, getConfig } from "./strategy";
+import { scanOpportunities, getConfig, updateConfig } from "./strategy";
 import {
   notifyOpportunities,
   notifyDailyReport,
@@ -9,10 +9,13 @@ import {
   notifyMarketResolved,
   notifyStopLossExecuted,
   notifyTakeProfitTierExecuted,
+  notifyLowBalance,
+  notifyAutoCompound,
 } from "./telegram";
 import { portfolioState } from "../lib/state";
 import { executeOpportunities } from "./autoTrader";
-import { isClobConfigured, getOpenOrders } from "./clob";
+import { isClobConfigured, getOpenOrders, getUsdcBalance } from "./clob";
+import { executePaperOpportunities, resolvePaperTradesNearResolution } from "./paperTrader";
 import db from "../lib/db";
 
 let scanTimer: ReturnType<typeof setInterval> | null = null;
@@ -22,6 +25,10 @@ let isScanning = false;
 let lastDailyReportDate = "";
 const alertedExpiringPositions = new Set<string>();
 let scanCycleCount = 0;
+let lastLowBalanceAlertAt = 0;
+const LOW_BALANCE_ALERT_COOLDOWN_MS = 4 * 60 * 60 * 1000; // 4 hours
+let lastAutoCompoundAt = 0;
+const AUTO_COMPOUND_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 interface AlertRow {
   id: number;
@@ -259,6 +266,83 @@ async function checkStopLossTakeProfit(): Promise<void> {
   }
 }
 
+async function checkLowBalance(): Promise<void> {
+  const config = getConfig();
+  if (!config.telegramAlertsEnabled || !isClobConfigured()) return;
+  if (Date.now() - lastLowBalanceAlertAt < LOW_BALANCE_ALERT_COOLDOWN_MS) return;
+
+  try {
+    const balance = await getUsdcBalance();
+    if (balance <= 0) return;
+
+    let threshold = 50;
+    let mode = "Normal";
+    let suggestion = "Top-up ke minimal $50 untuk performa optimal.";
+
+    if (balance < 5) {
+      threshold = 20;
+      mode = "Kritis — hampir tidak bisa trade";
+      suggestion = "Saldo sangat rendah. Top-up segera atau bot akan berhenti.";
+    } else if (balance < 20) {
+      threshold = 20;
+      mode = "Micro — risiko tinggi";
+      suggestion = "Minimal $20 agar bot bisa place order di Polymarket.";
+    } else if (balance < 50) {
+      threshold = 50;
+      mode = "Small Capital";
+      suggestion = "Dengan $50+ bot bisa diversifikasi lebih baik.";
+    } else {
+      return;
+    }
+
+    const lastAlert = db.prepare(
+      "SELECT alerted_at FROM low_balance_alerts ORDER BY id DESC LIMIT 1"
+    ).get() as { alerted_at: string } | undefined;
+
+    const lastAlertMs = lastAlert ? new Date(lastAlert.alerted_at).getTime() : 0;
+    if (Date.now() - lastAlertMs < LOW_BALANCE_ALERT_COOLDOWN_MS) return;
+
+    db.prepare(
+      "INSERT INTO low_balance_alerts (balance, threshold, alerted_at) VALUES (?, ?, ?)"
+    ).run(balance, threshold, new Date().toISOString());
+
+    lastLowBalanceAlertAt = Date.now();
+
+    await notifyLowBalance({ balance, minRequired: threshold, mode, suggestion });
+    logger.info({ balance, threshold, mode }, "Low balance alert sent");
+  } catch (e) {
+    logger.warn({ err: e }, "checkLowBalance failed");
+  }
+}
+
+async function runAutoCompound(): Promise<void> {
+  const config = getConfig();
+  if (!config.autoCompound || !isClobConfigured()) return;
+  if (Date.now() - lastAutoCompoundAt < AUTO_COMPOUND_COOLDOWN_MS) return;
+
+  try {
+    const balance = await getUsdcBalance();
+    if (balance <= 0 || balance === config.bankroll) return;
+
+    const oldBankroll = config.bankroll;
+    const profit = balance - oldBankroll;
+    const profitPct = oldBankroll > 0 ? (profit / oldBankroll) * 100 : 0;
+
+    if (Math.abs(profit) < 0.50) return;
+
+    updateConfig({ bankroll: Math.round(balance * 100) / 100 });
+    lastAutoCompoundAt = Date.now();
+
+    logger.info({ oldBankroll, newBankroll: balance, profit }, "Auto-compound: bankroll updated");
+
+    if (config.telegramAlertsEnabled) {
+      await notifyAutoCompound({ oldBankroll, newBankroll: balance, profit, profitPct });
+    }
+  } catch (e) {
+    logger.warn({ err: e }, "runAutoCompound failed");
+  }
+}
+
 async function checkMarketResolutions(): Promise<void> {
   const config = getConfig();
   if (!config.telegramAlertsEnabled) return;
@@ -389,6 +473,15 @@ async function runScan() {
     await checkStopLossTakeProfit();
     await checkMarketResolutions();
     await checkDailyReport();
+    await checkLowBalance();
+    await runAutoCompound();
+
+    // Paper trading — run alongside real scanning
+    const cfg = getConfig();
+    if (cfg.paperTradingMode) {
+      await executePaperOpportunities(opportunities, cfg);
+      resolvePaperTradesNearResolution(priceMap);
+    }
 
     if (scanCycleCount % 4 === 0) {
       await reconcileOrphanedOrders();

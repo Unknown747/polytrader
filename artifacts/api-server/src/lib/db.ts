@@ -133,6 +133,37 @@ db.exec(`
     price_at_execution REAL NOT NULL DEFAULT 0,
     PRIMARY KEY (position_id, event_type)
   );
+
+  CREATE TABLE IF NOT EXISTS paper_trades (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL,
+    market_id TEXT NOT NULL,
+    question TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT '',
+    side TEXT NOT NULL CHECK(side IN ('YES','NO')),
+    entry_price REAL NOT NULL,
+    amount REAL NOT NULL,
+    shares REAL NOT NULL,
+    edge REAL NOT NULL,
+    composite_score REAL NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    exit_price REAL,
+    pnl REAL,
+    pnl_pct REAL,
+    closed_at TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS paper_portfolio (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS low_balance_alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    balance REAL NOT NULL,
+    threshold REAL NOT NULL,
+    alerted_at TEXT NOT NULL
+  );
 `);
 
 logger.info({ path: DB_PATH }, "SQLite database opened (poly.db)");

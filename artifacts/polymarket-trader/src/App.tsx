@@ -13,6 +13,8 @@ import Strategy from "@/pages/Strategy";
 import Backtest from "@/pages/Backtest";
 import Correlation from "@/pages/Correlation";
 import Settings from "@/pages/Settings";
+import Analytics from "@/pages/Analytics";
+import ResolutionTracker from "@/pages/ResolutionTracker";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -36,6 +38,8 @@ function Router() {
         <Route path="/portfolio" component={Portfolio} />
         <Route path="/strategy" component={Strategy} />
         <Route path="/backtest" component={Backtest} />
+        <Route path="/analytics" component={Analytics} />
+        <Route path="/resolution" component={ResolutionTracker} />
         <Route path="/correlation" component={Correlation} />
         <Route path="/settings" component={Settings} />
         <Route component={NotFound} />
