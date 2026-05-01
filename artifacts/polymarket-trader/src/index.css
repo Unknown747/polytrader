@@ -1,0 +1,233 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-card-border: hsl(var(--card-border));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-popover-border: hsl(var(--popover-border));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
+
+  --color-sidebar: hsl(var(--sidebar));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-sidebar-primary: hsl(var(--sidebar-primary));
+  --color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
+  --color-sidebar-accent: hsl(var(--sidebar-accent));
+  --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
+  --color-sidebar-ring: hsl(var(--sidebar-ring));
+
+  --color-yes: hsl(var(--yes));
+  --color-yes-foreground: hsl(var(--yes-foreground));
+  --color-no: hsl(var(--no));
+  --color-no-foreground: hsl(var(--no-foreground));
+
+  --font-sans: var(--app-font-sans);
+  --font-serif: var(--app-font-serif);
+  --font-mono: var(--app-font-mono);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* Base Light Mode - Not really used in this app as it's dark by default */
+:root {
+  --background: 220 20% 97%;
+  --foreground: 220 20% 10%;
+  --border: 220 13% 91%;
+  --card: 0 0% 100%;
+  --card-foreground: 220 20% 10%;
+  --card-border: 220 13% 91%;
+  --sidebar: 220 20% 97%;
+  --sidebar-foreground: 220 20% 10%;
+  --sidebar-border: 220 13% 91%;
+  --sidebar-primary: 221 83% 53%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 220 13% 91%;
+  --sidebar-accent-foreground: 220 20% 10%;
+  --sidebar-ring: 221 83% 53%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 220 20% 10%;
+  --popover-border: 220 13% 91%;
+  --primary: 221 83% 53%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 13% 91%;
+  --secondary-foreground: 220 20% 10%;
+  --muted: 220 13% 91%;
+  --muted-foreground: 220 10% 45%;
+  --accent: 220 13% 91%;
+  --accent-foreground: 220 20% 10%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --input: 220 13% 91%;
+  --ring: 221 83% 53%;
+  
+  --yes: 142 71% 45%;
+  --yes-foreground: 0 0% 100%;
+  --no: 16 100% 50%;
+  --no-foreground: 0 0% 100%;
+
+  --chart-1: 221 83% 53%;
+  --chart-2: 142 71% 45%;
+  --chart-3: 16 100% 50%;
+  --chart-4: 280 80% 50%;
+  --chart-5: 45 90% 50%;
+
+  --app-font-sans: 'Inter', system-ui, sans-serif;
+  --app-font-serif: Georgia, serif;
+  --app-font-mono: 'Space Mono', Menlo, monospace;
+  --radius: 0.5rem;
+}
+
+/* Dark Mode - Main theme for the app */
+.dark, :root {
+  --background: 222 47% 7%;
+  --foreground: 210 40% 98%;
+  --border: 217 33% 17%;
+  --card: 222 47% 9%;
+  --card-foreground: 210 40% 98%;
+  --card-border: 217 33% 17%;
+  
+  --sidebar: 222 47% 6%;
+  --sidebar-foreground: 210 40% 98%;
+  --sidebar-border: 217 33% 17%;
+  --sidebar-primary: 224 76% 48%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 217 33% 17%;
+  --sidebar-accent-foreground: 210 40% 98%;
+  --sidebar-ring: 224 76% 48%;
+  
+  --popover: 222 47% 9%;
+  --popover-foreground: 210 40% 98%;
+  --popover-border: 217 33% 17%;
+  
+  --primary: 224 76% 48%;
+  --primary-foreground: 0 0% 100%;
+  
+  --secondary: 217 33% 17%;
+  --secondary-foreground: 210 40% 98%;
+  
+  --muted: 217 33% 17%;
+  --muted-foreground: 215 20% 65%;
+  
+  --accent: 217 33% 17%;
+  --accent-foreground: 210 40% 98%;
+  
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 210 40% 98%;
+  
+  --input: 217 33% 17%;
+  --ring: 224 76% 48%;
+  
+  --yes: 142 76% 46%;
+  --yes-foreground: 0 0% 100%;
+  --no: 10 90% 55%;
+  --no-foreground: 0 0% 100%;
+
+  --chart-1: 224 76% 48%;
+  --chart-2: 142 76% 46%;
+  --chart-3: 10 90% 55%;
+  --chart-4: 280 80% 60%;
+  --chart-5: 45 90% 60%;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .text-yes {
+    color: hsl(var(--yes));
+  }
+  .text-no {
+    color: hsl(var(--no));
+  }
+  .bg-yes {
+    background-color: hsl(var(--yes));
+  }
+  .bg-no {
+    background-color: hsl(var(--no));
+  }
+  .border-yes {
+    border-color: hsl(var(--yes));
+  }
+  .border-no {
+    border-color: hsl(var(--no));
+  }
+  .bg-yes\/10 {
+    background-color: hsl(var(--yes) / 0.1);
+  }
+  .bg-yes\/15 {
+    background-color: hsl(var(--yes) / 0.15);
+  }
+  .bg-yes\/20 {
+    background-color: hsl(var(--yes) / 0.2);
+  }
+  .bg-no\/10 {
+    background-color: hsl(var(--no) / 0.1);
+  }
+  .bg-no\/15 {
+    background-color: hsl(var(--no) / 0.15);
+  }
+  .bg-no\/20 {
+    background-color: hsl(var(--no) / 0.2);
+  }
+  .bg-yes\/90 {
+    background-color: hsl(var(--yes) / 0.9);
+  }
+  .bg-no\/90 {
+    background-color: hsl(var(--no) / 0.9);
+  }
+  .border-yes\/30 {
+    border-color: hsl(var(--yes) / 0.3);
+  }
+  .border-no\/30 {
+    border-color: hsl(var(--no) / 0.3);
+  }
+  .text-yes-foreground {
+    color: hsl(var(--yes-foreground));
+  }
+  .text-no-foreground {
+    color: hsl(var(--no-foreground));
+  }
+}
