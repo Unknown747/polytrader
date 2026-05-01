@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "Q5NVtllA7uOiQnLNVTkYc"
+uri = "file://README.md"
+type = "text"
+title = "README — PolyTrader"
