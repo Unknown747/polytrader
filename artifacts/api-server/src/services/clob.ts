@@ -282,4 +282,143 @@ export async function getOpenOrders(): Promise<ClobOrder[]> {
   }
 }
 
+export interface ClobTrade {
+  tradeId: string;
+  tokenId: string;
+  side: string;
+  price: number;
+  size: number;
+  usdcAmount: number;
+  timestamp: string;
+}
+
+export interface ClobPosition {
+  tokenId: string;
+  size: number;
+  avgPrice: number;
+  currentPrice: number;
+  value: number;
+  cost: number;
+  pnl: number;
+  pnlPercent: number;
+}
+
+export async function getFilledTrades(): Promise<ClobTrade[]> {
+  const creds = getCreds();
+  if (!creds) return [];
+  const address = getWalletAddress();
+  if (!address) return [];
+
+  try {
+    const path = `/data/trades?maker=${address}&status=MATCHED&limit=100`;
+    const headers = buildL2AuthHeaders(creds, "GET", path);
+    const res = await fetch(`${CLOB_URL}${path}`, {
+      headers,
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json() as {
+      data?: Array<{
+        id?: string;
+        asset_id?: string;
+        side?: string;
+        price?: string;
+        size?: string;
+        match_time?: string;
+      }>;
+    };
+    return (data.data ?? []).map((t) => {
+      const price = parseFloat(t.price ?? "0");
+      const size = parseFloat(t.size ?? "0");
+      return {
+        tradeId: t.id ?? "",
+        tokenId: t.asset_id ?? "",
+        side: t.side ?? "",
+        price,
+        size,
+        usdcAmount: Math.round(price * size * 100) / 100,
+        timestamp: t.match_time ?? new Date().toISOString(),
+      };
+    });
+  } catch (e) {
+    logger.warn({ err: e }, "Failed to fetch filled trades from CLOB");
+    return [];
+  }
+}
+
+export async function getLivePositions(): Promise<ClobPosition[]> {
+  const creds = getCreds();
+  if (!creds) return [];
+  const address = getWalletAddress();
+  if (!address) return [];
+
+  try {
+    const path = `/positions?user=${address}`;
+    const headers = buildL2AuthHeaders(creds, "GET", path);
+    const res = await fetch(`${CLOB_URL}${path}`, {
+      headers,
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json() as Array<{
+      asset_id?: string;
+      size?: string;
+      avg_price?: string;
+      cur_price?: string;
+      value?: string;
+      cost?: string;
+    }>;
+    return data.map((p) => {
+      const size = parseFloat(p.size ?? "0");
+      const avgPrice = parseFloat(p.avg_price ?? "0");
+      const currentPrice = parseFloat(p.cur_price ?? "0");
+      const cost = parseFloat(p.cost ?? String(size * avgPrice));
+      const value = parseFloat(p.value ?? String(size * currentPrice));
+      const pnl = value - cost;
+      const pnlPercent = cost > 0 ? (pnl / cost) * 100 : 0;
+      return {
+        tokenId: p.asset_id ?? "",
+        size,
+        avgPrice,
+        currentPrice,
+        value: Math.round(value * 100) / 100,
+        cost: Math.round(cost * 100) / 100,
+        pnl: Math.round(pnl * 100) / 100,
+        pnlPercent: Math.round(pnlPercent * 100) / 100,
+      };
+    });
+  } catch (e) {
+    logger.warn({ err: e }, "Failed to fetch live positions from CLOB");
+    return [];
+  }
+}
+
+export async function computeLivePnlHistory(trades: ClobTrade[]): Promise<
+  Array<{ date: string; pnl: number; cumulative: number; tradeCount: number }>
+> {
+  const byDate = new Map<string, { pnl: number; count: number }>();
+
+  for (const t of trades) {
+    const date = t.timestamp.slice(0, 10);
+    const existing = byDate.get(date) ?? { pnl: 0, count: 0 };
+    const realized =
+      t.side === "SELL"
+        ? t.usdcAmount
+        : -t.usdcAmount;
+    byDate.set(date, { pnl: existing.pnl + realized, count: existing.count + 1 });
+  }
+
+  const sorted = Array.from(byDate.entries()).sort(([a], [b]) => a.localeCompare(b));
+  let cumulative = 0;
+  return sorted.map(([date, { pnl, count }]) => {
+    cumulative += pnl;
+    return {
+      date,
+      pnl: Math.round(pnl * 100) / 100,
+      cumulative: Math.round(cumulative * 100) / 100,
+      tradeCount: count,
+    };
+  });
+}
+
 export { getWalletAddress };

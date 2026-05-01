@@ -1,6 +1,6 @@
 # Polymarket Trader
 
-A full Polymarket prediction market trading dashboard for Polygon mainnet with real market data, strategy scanner, backtesting, and Telegram notifications.
+A full-stack Polymarket prediction market trading dashboard for Polygon mainnet with real market data, strategy scanner, backtesting, Telegram notifications, and automated order execution via the Polymarket CLOB API.
 
 ## Architecture
 
@@ -25,54 +25,95 @@ pnpm monorepo with the following artifacts and libraries:
 - **Market Detail** — Market info + buy/sell YES/NO order form
 - **Positions** — Open positions with unrealized P&L
 - **Orders** — Order history with cancel support
-- **Portfolio** — Cumulative P&L chart, daily P&L bar chart, position breakdown
-- **Strategy Scanner** — Scans near-resolution high-probability markets (>80%, <21 days), calculates edge and half-Kelly sizing
+- **Portfolio** — Cumulative P&L chart, daily P&L bar chart, position breakdown, **live CLOB P&L panel** (real-time positions + realized trade history from Polymarket when credentials are set)
+- **Strategy Scanner** — Scans near-resolution high-probability markets (>80%, <21 days), composite scoring across 5 factors, half-Kelly sizing
 - **Backtester** — Simulates strategy on historical data, shows equity curve, win rate, Sharpe ratio, trade log
-- **Settings** — Wallet status, Telegram setup, auto-trading bot config (scan interval, min edge, max position, etc.)
+- **Settings** — Wallet status (real USDC balance from CLOB), Telegram setup, strategy + auto-trading config, **auto-trading status panel** with recent trades, USDC balance, daily slot counter, and manual scan trigger
 
 ## Backend Services
 
-- **`services/polymarket.ts`** — Polymarket Gamma API client with 5-min caching, retry logic (3 attempts), multi-page fetching (up to 5 pages × 200 markets = 1000 markets), tokenId parsing from clobTokenIds
-- **`services/strategy.ts`** — Composite scoring strategy: edge (35%), expected return (20%), time urgency (20%), liquidity (15%), volume (10%). Configurable `minLiquidity` and `maxOpportunities`. Sorted by composite score, not just edge.
-- **`services/backtest.ts`** — Realistic simulation: win rate derived from entry price (not hardcoded), 30 unique market templates (no cycling), randomized trade timing, sorted output
-- **`services/telegram.ts`** — Retry logic (3 attempts + rate-limit handling), shows top 5 opportunities (not 3), real portfolio data in daily reports, skip if unconfigured
-- **`services/scheduler.ts`** — Immediate first scan on startup (5s delay), real portfolio summary in daily report, `triggerManualScan()` and `triggerDailyReport()` exposed for manual triggers. After each scan, calls `executeOpportunities()` if auto-trading is enabled.
-- **`services/clob.ts`** — Polymarket CLOB API client: EIP-712 order signing (ethers.js v6), L2 HMAC-SHA256 auth headers, `placeOrder()`, `getUsdcBalance()`, `getOpenOrders()`, `isClobConfigured()`
-- **`services/autoTrader.ts`** — Auto-trading orchestrator: daily trade counter, Kelly-fraction sizing capped by `maxPositionPct`, deduplication (one trade per market per side per day), `executeOpportunities()` places real orders and updates portfolio state
+| File | Responsibility |
+|------|---------------|
+| `services/polymarket.ts` | Polymarket Gamma API client — 5-min cache, retry (3×), multi-page fetch (up to 1 000 markets), tokenId parsing from `clobTokenIds` |
+| `services/strategy.ts` | Composite scoring: edge 35%, expected return 20%, time urgency 20%, liquidity 15%, volume 10%. Configurable `minLiquidity` and `maxOpportunities`. |
+| `services/backtest.ts` | Realistic simulation: win rate from entry price, 30 unique market templates, randomised trade timing |
+| `services/telegram.ts` | Retry (3×) + rate-limit handling, top-5 opportunities, real portfolio data in daily reports |
+| `services/scheduler.ts` | Immediate first scan (5 s delay), interval scan, daily report; calls `executeOpportunities()` when auto-trading is on |
+| `services/clob.ts` | **Polymarket CLOB API client** — EIP-712 order signing (ethers.js v6), L2 HMAC-SHA256 auth, `placeOrder()`, `getUsdcBalance()`, `getOpenOrders()`, `getFilledTrades()`, `getLivePositions()`, `computeLivePnlHistory()` |
+| `services/autoTrader.ts` | **Auto-trading engine** — daily trade counter, Kelly-fraction sizing capped by `maxPositionPct`, one trade per market/side per day, `executeOpportunities()` places real orders and updates portfolio state |
+
+## API Routes
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/health` | Server health check |
+| GET | `/api/markets` | List/search markets |
+| GET | `/api/markets/:id` | Market detail |
+| GET/POST | `/api/orders` | List orders / place new order |
+| DELETE | `/api/orders/:id` | Cancel order |
+| GET | `/api/positions` | Open positions |
+| GET | `/api/portfolio/summary` | Portfolio summary metrics |
+| GET | `/api/portfolio/pnl` | P&L history (in-memory) |
+| GET | `/api/portfolio/live` | **Live P&L from CLOB** — real positions, realized trade history, USDC balance |
+| GET | `/api/strategy/opportunities` | Scanned opportunities |
+| GET/POST | `/api/strategy/config` | Read/update strategy config |
+| POST | `/api/strategy/backtest` | Run backtest simulation |
+| GET | `/api/wallet/status` | Wallet connection + real USDC balance |
+| GET/POST | `/api/telegram/test` | Telegram bot test |
+| GET | `/api/auto-trading/status` | Auto-trader status, USDC balance, recent trades |
+| GET | `/api/auto-trading/history` | Last 100 executed trades |
+| POST | `/api/auto-trading/trigger` | Trigger manual scan + execution cycle |
 
 ## Shared State
 
-- **`lib/state.ts`** — In-memory `PortfolioState` class: holds orders, positions, PnL history. Orders placed via `/api/orders` automatically create/update positions and append PnL points. Portfolio summary is computed live from state.
+- **`lib/state.ts`** — In-memory `PortfolioState` class: orders, positions, PnL history. Orders placed via `/api/orders` or by `autoTrader` automatically create/update positions and append PnL points. Portfolio summary is computed live.
 
 ## Data Mode
 
-- **Markets** — Live Polymarket Gamma API with multi-page fetch; falls back to 10 demo markets if unavailable
-- **Positions, Orders, Portfolio** — Dynamic in-memory state (resets on restart). Orders placed update positions and portfolio in real-time
-- **Strategy** — Live scan against real Gamma API markets; falls back to demo markets if unavailable
+| Feature | When credentials absent | When credentials present |
+|---------|------------------------|-------------------------|
+| Markets | Live Gamma API, demo fallback | Live Gamma API |
+| Orders / Positions / Portfolio | In-memory demo state | In-memory state (updated by real fills) |
+| USDC Balance | `$0.00` | Real balance from CLOB |
+| Live P&L panel | "Not configured" message | Real positions + realized trade history from CLOB |
+| Auto-trading | Disabled, shows warning | Places EIP-712 signed orders on CLOB |
 
 ## Auto-Trading Setup
 
-To enable live order execution on Polymarket CLOB:
+To enable live order execution on Polymarket CLOB, set these environment variables in Replit Secrets:
 
-1. Set these environment variables (Replit Secrets):
-   - `POLYMARKET_PRIVATE_KEY` — Ethereum private key (hex, with or without 0x prefix)
-   - `POLYMARKET_API_KEY` — Polymarket CLOB API key
-   - `POLYMARKET_API_SECRET` — Polymarket CLOB API secret (for HMAC signing)
-   - `POLYMARKET_API_PASSPHRASE` — Polymarket CLOB API passphrase
-2. In Settings → Auto-Trading Config, enable the toggle and set `maxDailyTrades`
-3. Orders are signed via EIP-712 (L1 auth) + HMAC-SHA256 (L2 auth) and submitted to `https://clob.polymarket.com/order`
+| Variable | Description |
+|----------|-------------|
+| `POLYMARKET_PRIVATE_KEY` | Ethereum private key (hex, with or without `0x` prefix) |
+| `POLYMARKET_API_KEY` | Polymarket CLOB L2 API key |
+| `POLYMARKET_API_SECRET` | Polymarket CLOB L2 API secret (HMAC-SHA256 signing) |
+| `POLYMARKET_API_PASSPHRASE` | Polymarket CLOB L2 API passphrase |
+| `TELEGRAM_BOT_TOKEN` | (Optional) Telegram bot token for alerts |
+| `TELEGRAM_CHAT_ID` | (Optional) Telegram chat/channel ID for alerts |
 
-To connect to Polymarket mainnet (Polygon) for live trading, set wallet secrets in Settings (see wallet connection instructions).
+**Order signing flow:**
+1. EIP-712 typed-data signature using `POLYMARKET_PRIVATE_KEY` (ethers.js Wallet)
+2. L2 HMAC-SHA256 header (`POLY_SIGNATURE`) computed from `timestamp + METHOD + path + body` using `POLYMARKET_API_SECRET`
+3. Order submitted to `https://clob.polymarket.com/order` as GTC limit order
+
+After setting credentials, go to **Settings → Auto-Trading Config**, enable the toggle, and set `maxDailyTrades`. The scanner will start placing real orders automatically on each scan interval.
 
 ## Development
 
 - Frontend auto-refreshes via Vite HMR
-- Backend rebuilds on workflow restart
-- API contract is defined in `lib/api-spec/openapi.yaml` — edit there, then run codegen
+- Backend rebuilds on workflow restart (esbuild, ~200 ms)
+- API contract is defined in `lib/api-spec/openapi.yaml` — edit there, then run `pnpm --filter @workspace/api-spec run codegen`
+- Workflows: `PORT=8080 pnpm --filter @workspace/api-server run dev` and `PORT=23789 BASE_PATH=/ pnpm --filter @workspace/polymarket-trader run dev`
 
 ## Key Files
 
-- `lib/api-spec/openapi.yaml` — API contract (source of truth)
-- `artifacts/api-server/src/routes/` — Backend route handlers with fake data
-- `artifacts/polymarket-trader/src/pages/` — Frontend pages
-- `artifacts/polymarket-trader/src/components/layout/` — Sidebar + AppLayout
+| File | Purpose |
+|------|---------|
+| `lib/api-spec/openapi.yaml` | API contract (source of truth) |
+| `artifacts/api-server/src/lib/state.ts` | In-memory portfolio state |
+| `artifacts/api-server/src/services/clob.ts` | CLOB API client (signing + live data) |
+| `artifacts/api-server/src/services/autoTrader.ts` | Auto-trading execution engine |
+| `artifacts/api-server/src/services/scheduler.ts` | Scan scheduler + auto-trade hook |
+| `artifacts/api-server/src/routes/` | Backend route handlers |
+| `artifacts/polymarket-trader/src/pages/Portfolio.tsx` | Portfolio page with live CLOB panel |
+| `artifacts/polymarket-trader/src/pages/Settings.tsx` | Settings page with auto-trading status |
