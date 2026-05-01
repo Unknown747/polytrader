@@ -6,9 +6,9 @@ import {
   notifyDailyReport,
   notifyPriceAlert,
   notifyExpiringPosition,
-  notifyStopLossTriggered,
-  notifyTakeProfitTriggered,
   notifyMarketResolved,
+  notifyStopLossExecuted,
+  notifyTakeProfitTierExecuted,
 } from "./telegram";
 import { portfolioState } from "../lib/state";
 import { executeOpportunities } from "./autoTrader";
@@ -135,8 +135,22 @@ async function checkDailyReport(): Promise<void> {
   }
 }
 
+function hasRiskEvent(positionId: string, eventType: string): boolean {
+  return !!db.prepare(
+    "SELECT 1 FROM position_risk_events WHERE position_id = ? AND event_type = ?"
+  ).get(positionId, eventType);
+}
+
+function recordRiskEvent(positionId: string, eventType: string, sharesSold: number, realizedPnl: number, price: number): void {
+  db.prepare(
+    `INSERT OR IGNORE INTO position_risk_events (position_id, event_type, executed_at, shares_sold, realized_pnl, price_at_execution)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(positionId, eventType, new Date().toISOString(), sharesSold, realizedPnl, price);
+}
+
 async function checkStopLossTakeProfit(): Promise<void> {
   const config = getConfig();
+  const slPct = Math.max(10, Math.min(20, config.stopLossPct));
   const positions = portfolioState.getPositions();
   if (positions.length === 0) return;
 
@@ -145,32 +159,101 @@ async function checkStopLossTakeProfit(): Promise<void> {
 
     const entry = pos.avgPrice;
     const current = pos.currentPrice;
+    if (current <= 0) continue;
     const pnlPct = ((current - entry) / entry) * 100;
 
-    const slKey = `sl-${pos.id}`;
-    const tpKey = `tp-${pos.id}`;
+    // ── Stop-Loss: auto-execute when loss >= stopLossPct (clamped 10-20%) ──
+    if (pnlPct <= -slPct && config.stopLossAutoExecute) {
+      if (!hasRiskEvent(pos.id, "sl")) {
+        logger.warn({ marketId: pos.marketId, pnlPct, slPct }, "Stop-loss executing — closing position");
+        const result = portfolioState.fullClosePosition(pos.id, current);
+        const sharesSold = pos.shares;
+        const realizedPnl = result?.realizedPnl ?? pos.pnl;
 
-    if (pnlPct <= -config.stopLossPct && !alertedExpiringPositions.has(slKey)) {
-      alertedExpiringPositions.add(slKey);
-      logger.warn({ marketId: pos.marketId, pnlPct, threshold: -config.stopLossPct }, "Stop-loss threshold reached");
-      await notifyStopLossTriggered({
+        recordRiskEvent(pos.id, "sl", sharesSold, realizedPnl, current);
+        await notifyStopLossExecuted({
+          question: pos.marketQuestion,
+          side: pos.side as "YES" | "NO",
+          entryPrice: entry,
+          currentPrice: current,
+          sharesSold,
+          realizedPnl,
+          pnlPct,
+        });
+      }
+      continue;
+    }
+
+    if (!config.takeProfitEnabled) continue;
+
+    // ── Take-Profit Tier 1 (default 30%): recover initial capital ──
+    if (pnlPct >= config.takeProfitTier1Pct && !hasRiskEvent(pos.id, "tp1")) {
+      const costBasis = pos.shares * entry;
+      const sharesToSell = Math.min(costBasis / current, pos.shares);
+      if (sharesToSell < 0.001) continue;
+
+      logger.info({ marketId: pos.marketId, pnlPct, tier: 1 }, "Take-profit Tier 1 — recovering capital");
+      const result = portfolioState.partialClosePosition(pos.id, sharesToSell, current);
+      if (!result) continue;
+
+      recordRiskEvent(pos.id, "tp1", sharesToSell, result.realizedPnl, current);
+      await notifyTakeProfitTierExecuted({
         question: pos.marketQuestion,
         side: pos.side as "YES" | "NO",
+        tier: 1,
+        tierPct: config.takeProfitTier1Pct,
         entryPrice: entry,
         currentPrice: current,
-        pnl: pos.pnl,
-        pnlPct,
+        sharesSold: sharesToSell,
+        realizedPnl: result.realizedPnl,
+        remainingShares: result.remainingShares,
+        action: "capital_recovery",
       });
-    } else if (pnlPct >= config.takeProfitPct && !alertedExpiringPositions.has(tpKey)) {
-      alertedExpiringPositions.add(tpKey);
-      logger.info({ marketId: pos.marketId, pnlPct, threshold: config.takeProfitPct }, "Take-profit threshold reached");
-      await notifyTakeProfitTriggered({
+    }
+
+    // ── Take-Profit Tier 2 (default 50%): sell half of remaining ──
+    else if (pnlPct >= config.takeProfitTier2Pct && hasRiskEvent(pos.id, "tp1") && !hasRiskEvent(pos.id, "tp2")) {
+      const sharesToSell = pos.shares * 0.5;
+      if (sharesToSell < 0.001) continue;
+
+      logger.info({ marketId: pos.marketId, pnlPct, tier: 2 }, "Take-profit Tier 2 — selling 50% of remainder");
+      const result = portfolioState.partialClosePosition(pos.id, sharesToSell, current);
+      if (!result) continue;
+
+      recordRiskEvent(pos.id, "tp2", sharesToSell, result.realizedPnl, current);
+      await notifyTakeProfitTierExecuted({
         question: pos.marketQuestion,
         side: pos.side as "YES" | "NO",
+        tier: 2,
+        tierPct: config.takeProfitTier2Pct,
         entryPrice: entry,
         currentPrice: current,
-        pnl: pos.pnl,
-        pnlPct,
+        sharesSold: sharesToSell,
+        realizedPnl: result.realizedPnl,
+        remainingShares: result.remainingShares,
+        action: "half_remaining",
+      });
+    }
+
+    // ── Take-Profit Tier 3 (default 100%): close fully ──
+    else if (pnlPct >= config.takeProfitTier3Pct && !hasRiskEvent(pos.id, "tp3")) {
+      logger.info({ marketId: pos.marketId, pnlPct, tier: 3 }, "Take-profit Tier 3 — full close");
+      const sharesSold = pos.shares;
+      const result = portfolioState.fullClosePosition(pos.id, current);
+      if (!result) continue;
+
+      recordRiskEvent(pos.id, "tp3", sharesSold, result.realizedPnl, current);
+      await notifyTakeProfitTierExecuted({
+        question: pos.marketQuestion,
+        side: pos.side as "YES" | "NO",
+        tier: 3,
+        tierPct: config.takeProfitTier3Pct,
+        entryPrice: entry,
+        currentPrice: current,
+        sharesSold,
+        realizedPnl: result.realizedPnl,
+        remainingShares: 0,
+        action: "full_close",
       });
     }
   }

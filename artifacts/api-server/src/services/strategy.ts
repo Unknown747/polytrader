@@ -16,7 +16,11 @@ export interface StrategyConfig {
   maxOpportunities: number;
   dailyReportHour: number;
   stopLossPct: number;
-  takeProfitPct: number;
+  stopLossAutoExecute: boolean;
+  takeProfitEnabled: boolean;
+  takeProfitTier1Pct: number;
+  takeProfitTier2Pct: number;
+  takeProfitTier3Pct: number;
   trendFilterEnabled: boolean;
 }
 
@@ -55,8 +59,12 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   maxDailyTrades: 5,
   maxOpportunities: 30,
   dailyReportHour: 8,
-  stopLossPct: 20,
-  takeProfitPct: 50,
+  stopLossPct: 15,
+  stopLossAutoExecute: true,
+  takeProfitEnabled: true,
+  takeProfitTier1Pct: 30,
+  takeProfitTier2Pct: 50,
+  takeProfitTier3Pct: 100,
   trendFilterEnabled: true,
 };
 

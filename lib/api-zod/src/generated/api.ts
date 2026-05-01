@@ -205,6 +205,9 @@ export const GetOpportunitiesResponse = zod.array(GetOpportunitiesResponseItem);
 /**
  * @summary Get auto-trading configuration
  */
+export const getStrategyConfigResponseStopLossPctMin = 10;
+export const getStrategyConfigResponseStopLossPctMax = 20;
+
 export const GetStrategyConfigResponse = zod.object({
   autoTradingEnabled: zod.boolean(),
   bankroll: zod.number(),
@@ -219,14 +222,24 @@ export const GetStrategyConfigResponse = zod.object({
   maxDailyTrades: zod.number(),
   maxOpportunities: zod.number(),
   dailyReportHour: zod.number(),
-  stopLossPct: zod.number(),
-  takeProfitPct: zod.number(),
+  stopLossPct: zod
+    .number()
+    .min(getStrategyConfigResponseStopLossPctMin)
+    .max(getStrategyConfigResponseStopLossPctMax),
+  stopLossAutoExecute: zod.boolean(),
+  takeProfitEnabled: zod.boolean(),
+  takeProfitTier1Pct: zod.number(),
+  takeProfitTier2Pct: zod.number(),
+  takeProfitTier3Pct: zod.number(),
   trendFilterEnabled: zod.boolean(),
 });
 
 /**
  * @summary Update auto-trading configuration
  */
+export const updateStrategyConfigBodyStopLossPctMin = 10;
+export const updateStrategyConfigBodyStopLossPctMax = 20;
+
 export const UpdateStrategyConfigBody = zod.object({
   autoTradingEnabled: zod.boolean(),
   bankroll: zod.number(),
@@ -241,10 +254,20 @@ export const UpdateStrategyConfigBody = zod.object({
   maxDailyTrades: zod.number(),
   maxOpportunities: zod.number(),
   dailyReportHour: zod.number(),
-  stopLossPct: zod.number(),
-  takeProfitPct: zod.number(),
+  stopLossPct: zod
+    .number()
+    .min(updateStrategyConfigBodyStopLossPctMin)
+    .max(updateStrategyConfigBodyStopLossPctMax),
+  stopLossAutoExecute: zod.boolean(),
+  takeProfitEnabled: zod.boolean(),
+  takeProfitTier1Pct: zod.number(),
+  takeProfitTier2Pct: zod.number(),
+  takeProfitTier3Pct: zod.number(),
   trendFilterEnabled: zod.boolean(),
 });
+
+export const updateStrategyConfigResponseStopLossPctMin = 10;
+export const updateStrategyConfigResponseStopLossPctMax = 20;
 
 export const UpdateStrategyConfigResponse = zod.object({
   autoTradingEnabled: zod.boolean(),
@@ -260,8 +283,15 @@ export const UpdateStrategyConfigResponse = zod.object({
   maxDailyTrades: zod.number(),
   maxOpportunities: zod.number(),
   dailyReportHour: zod.number(),
-  stopLossPct: zod.number(),
-  takeProfitPct: zod.number(),
+  stopLossPct: zod
+    .number()
+    .min(updateStrategyConfigResponseStopLossPctMin)
+    .max(updateStrategyConfigResponseStopLossPctMax),
+  stopLossAutoExecute: zod.boolean(),
+  takeProfitEnabled: zod.boolean(),
+  takeProfitTier1Pct: zod.number(),
+  takeProfitTier2Pct: zod.number(),
+  takeProfitTier3Pct: zod.number(),
   trendFilterEnabled: zod.boolean(),
 });
 

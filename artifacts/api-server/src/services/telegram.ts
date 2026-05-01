@@ -255,6 +255,61 @@ export async function notifyTakeProfitTriggered(params: {
   );
 }
 
+export async function notifyStopLossExecuted(params: {
+  question: string;
+  side: "YES" | "NO";
+  entryPrice: number;
+  currentPrice: number;
+  sharesSold: number;
+  realizedPnl: number;
+  pnlPct: number;
+}): Promise<void> {
+  if (!isTelegramConfigured()) return;
+  const { question, side, entryPrice, currentPrice, sharesSold, realizedPnl, pnlPct } = params;
+  await sendMessage(
+    `🛑 <b>Stop-Loss EXECUTED</b>\n\n` +
+    `<b>${question}</b>\n\n` +
+    `${side} | Entry: ${(entryPrice * 100).toFixed(0)}¢ → Exit: <b>${(currentPrice * 100).toFixed(0)}¢</b>\n` +
+    `Shares sold: <b>${sharesSold.toFixed(3)}</b>\n` +
+    `Realized Loss: <b>-$${Math.abs(realizedPnl).toFixed(2)} (${pnlPct.toFixed(1)}%)</b>\n\n` +
+    `✅ Position closed automatically to protect capital.`
+  );
+}
+
+export async function notifyTakeProfitTierExecuted(params: {
+  question: string;
+  side: "YES" | "NO";
+  tier: 1 | 2 | 3;
+  tierPct: number;
+  entryPrice: number;
+  currentPrice: number;
+  sharesSold: number;
+  realizedPnl: number;
+  remainingShares: number;
+  action: "capital_recovery" | "half_remaining" | "full_close";
+}): Promise<void> {
+  if (!isTelegramConfigured()) return;
+  const { question, side, tier, tierPct, entryPrice, currentPrice, sharesSold, realizedPnl, remainingShares, action } = params;
+
+  let actionDesc = "";
+  if (action === "capital_recovery") {
+    actionDesc = `💰 Modal awal dikembalikan — sisa <b>${remainingShares.toFixed(3)} shares</b> jalan gratis!`;
+  } else if (action === "half_remaining") {
+    actionDesc = `📤 50% sisa dijual — <b>${remainingShares.toFixed(3)} shares</b> masih jalan.`;
+  } else {
+    actionDesc = `🏁 Posisi DITUTUP PENUH — profit dikunci.`;
+  }
+
+  await sendMessage(
+    `🎯 <b>Take-Profit Tier ${tier} (${tierPct}%) EXECUTED</b>\n\n` +
+    `<b>${question}</b>\n\n` +
+    `${side} | Entry: ${(entryPrice * 100).toFixed(0)}¢ → Now: <b>${(currentPrice * 100).toFixed(0)}¢</b>\n` +
+    `Shares sold: <b>${sharesSold.toFixed(3)}</b>\n` +
+    `Realized Profit: <b>+$${realizedPnl.toFixed(2)}</b>\n\n` +
+    actionDesc
+  );
+}
+
 export async function notifyMarketResolved(params: {
   question: string;
   side: "YES" | "NO";

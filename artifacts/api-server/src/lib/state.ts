@@ -266,6 +266,60 @@ class PortfolioState {
     }
   }
 
+  partialClosePosition(positionId: string, sharesToSell: number, currentPrice: number): { realizedPnl: number; remainingShares: number } | null {
+    const row = db.prepare("SELECT * FROM portfolio_positions WHERE id = ?").get(positionId) as DbPosition | undefined;
+    if (!row) return null;
+
+    const sell = Math.min(sharesToSell, row.shares);
+    const remainingShares = Math.round((row.shares - sell) * 1000) / 1000;
+    const costBasisSold = Math.round(sell * row.avg_price * 100) / 100;
+    const proceeds = Math.round(sell * currentPrice * 100) / 100;
+    const realizedPnl = Math.round((proceeds - costBasisSold) * 100) / 100;
+
+    if (remainingShares <= 0.001) {
+      db.prepare("DELETE FROM portfolio_positions WHERE id = ?").run(positionId);
+    } else {
+      const newValue = Math.round(remainingShares * currentPrice * 100) / 100;
+      const newCost = Math.round(remainingShares * row.avg_price * 100) / 100;
+      const newPnl = Math.round((newValue - newCost) * 100) / 100;
+      const newPnlPct = newCost > 0 ? Math.round((newPnl / newCost) * 10000) / 100 : 0;
+      db.prepare(
+        `UPDATE portfolio_positions SET shares=?, current_price=?, pnl=?, pnl_percent=?, value=? WHERE id=?`
+      ).run(remainingShares, currentPrice, newPnl, newPnlPct, newValue, positionId);
+    }
+
+    const orderId = this.nextOrderId();
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO portfolio_orders (id, market_id, market_question, side, type, price, amount, shares, status, created_at)
+       VALUES (?, ?, ?, ?, 'SELL', ?, ?, ?, 'filled', ?)`
+    ).run(orderId, row.market_id, row.market_question, row.side, currentPrice, proceeds, sell, now);
+
+    this.recordPnlPoint(realizedPnl);
+    return { realizedPnl, remainingShares };
+  }
+
+  fullClosePosition(positionId: string, currentPrice: number): { realizedPnl: number } | null {
+    const row = db.prepare("SELECT * FROM portfolio_positions WHERE id = ?").get(positionId) as DbPosition | undefined;
+    if (!row) return null;
+    const result = this.partialClosePosition(positionId, row.shares, currentPrice);
+    return result ? { realizedPnl: result.realizedPnl } : null;
+  }
+
+  private recordPnlPoint(pnl: number): void {
+    const today = new Date().toISOString().slice(0, 10);
+    const existing = db.prepare("SELECT date, pnl, cumulative FROM portfolio_pnl WHERE date = ?").get(today) as { date: string; pnl: number; cumulative: number } | undefined;
+    if (existing) {
+      const newPnl = Math.round((existing.pnl + pnl) * 100) / 100;
+      const newCumulative = Math.round((existing.cumulative + pnl) * 100) / 100;
+      db.prepare("UPDATE portfolio_pnl SET pnl=?, cumulative=? WHERE date=?").run(newPnl, newCumulative, today);
+    } else {
+      const lastRow = db.prepare("SELECT cumulative FROM portfolio_pnl ORDER BY date DESC LIMIT 1").get() as { cumulative: number } | undefined;
+      const lastCumulative = (lastRow?.cumulative ?? 0) + pnl;
+      db.prepare("INSERT INTO portfolio_pnl (date, pnl, cumulative) VALUES (?, ?, ?)").run(today, Math.round(pnl * 100) / 100, Math.round(lastCumulative * 100) / 100);
+    }
+  }
+
   updatePositionPrices(priceMap: Map<string, number>): void {
     const positions = db.prepare(
       "SELECT id, market_id, side, shares, avg_price FROM portfolio_positions"

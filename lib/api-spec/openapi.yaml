@@ -591,7 +591,17 @@ components:
           type: integer
         stopLossPct:
           type: number
-        takeProfitPct:
+          minimum: 10
+          maximum: 20
+        stopLossAutoExecute:
+          type: boolean
+        takeProfitEnabled:
+          type: boolean
+        takeProfitTier1Pct:
+          type: number
+        takeProfitTier2Pct:
+          type: number
+        takeProfitTier3Pct:
           type: number
         trendFilterEnabled:
           type: boolean
@@ -610,7 +620,11 @@ components:
         - maxOpportunities
         - dailyReportHour
         - stopLossPct
-        - takeProfitPct
+        - stopLossAutoExecute
+        - takeProfitEnabled
+        - takeProfitTier1Pct
+        - takeProfitTier2Pct
+        - takeProfitTier3Pct
         - trendFilterEnabled
 
     BacktestRequest:

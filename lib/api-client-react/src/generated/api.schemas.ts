@@ -192,8 +192,16 @@ export interface StrategyConfig {
   maxDailyTrades: number;
   maxOpportunities: number;
   dailyReportHour: number;
+  /**
+   * @minimum 10
+   * @maximum 20
+   */
   stopLossPct: number;
-  takeProfitPct: number;
+  stopLossAutoExecute: boolean;
+  takeProfitEnabled: boolean;
+  takeProfitTier1Pct: number;
+  takeProfitTier2Pct: number;
+  takeProfitTier3Pct: number;
   trendFilterEnabled: boolean;
 }
 

@@ -104,6 +104,16 @@ db.exec(`
     notified_at TEXT NOT NULL,
     PRIMARY KEY (position_id, side)
   );
+
+  CREATE TABLE IF NOT EXISTS position_risk_events (
+    position_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    executed_at TEXT NOT NULL,
+    shares_sold REAL NOT NULL DEFAULT 0,
+    realized_pnl REAL NOT NULL DEFAULT 0,
+    price_at_execution REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY (position_id, event_type)
+  );
 `);
 
 logger.info({ path: DB_PATH }, "SQLite database opened (poly.db)");

@@ -104,7 +104,11 @@ type StrategyConfig = {
   maxOpportunities: number;
   dailyReportHour: number;
   stopLossPct: number;
-  takeProfitPct: number;
+  stopLossAutoExecute: boolean;
+  takeProfitEnabled: boolean;
+  takeProfitTier1Pct: number;
+  takeProfitTier2Pct: number;
+  takeProfitTier3Pct: number;
   trendFilterEnabled: boolean;
 };
 
@@ -628,7 +632,7 @@ export default function Settings() {
               </div>
             </div>
 
-            <div className="border-t border-border/50 pt-4 space-y-4">
+            <div className="border-t border-border/50 pt-4 space-y-5">
               <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Risk Management</div>
 
               <Toggle
@@ -637,36 +641,130 @@ export default function Settings() {
                 label="Enable price trend filter (skips downtrending opportunities)"
               />
 
-              <div className="space-y-2">
+              {/* ── Stop-Loss ── */}
+              <div className="rounded-lg border border-border bg-background/50 p-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <Label className="text-xs">Stop-Loss threshold</Label>
-                  <span className="text-xs font-mono text-no font-semibold">-{form.stopLossPct}%</span>
+                  <div>
+                    <div className="text-sm font-semibold text-foreground">Stop-Loss Otomatis</div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">Posisi ditutup langsung saat rugi mencapai batas</div>
+                  </div>
+                  <span className="text-sm font-mono text-no font-bold">-{form.stopLossPct}%</span>
                 </div>
                 <Slider
-                  min={5}
-                  max={60}
-                  step={5}
+                  min={10}
+                  max={20}
+                  step={1}
                   value={[form.stopLossPct]}
                   onValueChange={([v]) => setField("stopLossPct", String(v))}
                   className="w-full"
                 />
-                <p className="text-[11px] text-muted-foreground">Alert sent when position P&L drops below this threshold</p>
+                <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                  <span>Min -10%</span>
+                  <span>Max -20%</span>
+                </div>
+                <Toggle
+                  checked={form.stopLossAutoExecute}
+                  onChange={(v) => setField("stopLossAutoExecute", v)}
+                  label="Auto-execute (tutup posisi otomatis — bukan hanya notifikasi)"
+                />
+                {form.stopLossAutoExecute && (
+                  <div className="flex items-center gap-2 rounded-md bg-no/10 border border-no/20 px-3 py-2">
+                    <span className="text-[11px] text-no font-medium">
+                      ⚡ Aktif — posisi akan dijual otomatis jika rugi ≥ {form.stopLossPct}%
+                    </span>
+                  </div>
+                )}
               </div>
 
-              <div className="space-y-2">
+              {/* ── Take-Profit Bertahap ── */}
+              <div className="rounded-lg border border-border bg-background/50 p-4 space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label className="text-xs">Take-Profit threshold</Label>
-                  <span className="text-xs font-mono text-yes font-semibold">+{form.takeProfitPct}%</span>
+                  <div>
+                    <div className="text-sm font-semibold text-foreground">Take-Profit Bertahap</div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">Ambil profit secara bertahap di 3 level</div>
+                  </div>
+                  <Toggle
+                    checked={form.takeProfitEnabled}
+                    onChange={(v) => setField("takeProfitEnabled", v)}
+                    label=""
+                  />
                 </div>
-                <Slider
-                  min={10}
-                  max={200}
-                  step={10}
-                  value={[form.takeProfitPct]}
-                  onValueChange={([v]) => setField("takeProfitPct", String(v))}
-                  className="w-full"
-                />
-                <p className="text-[11px] text-muted-foreground">Alert sent when position P&L exceeds this threshold</p>
+
+                {form.takeProfitEnabled && (
+                  <div className="space-y-4">
+                    {/* Tier 1 */}
+                    <div className="space-y-2 rounded-md border border-yes/20 bg-yes/5 p-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="text-xs font-semibold text-yes">Tier 1 — Ambil Modal Balik</span>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            Jual cukup shares untuk balik modal awal. Sisa shares jalan gratis!
+                          </p>
+                        </div>
+                        <span className="text-xs font-mono text-yes font-bold">+{form.takeProfitTier1Pct}%</span>
+                      </div>
+                      <Slider
+                        min={20}
+                        max={50}
+                        step={5}
+                        value={[form.takeProfitTier1Pct]}
+                        onValueChange={([v]) => setField("takeProfitTier1Pct", String(v))}
+                        className="w-full"
+                      />
+                      <div className="text-[10px] text-muted-foreground">
+                        Contoh: trade $5 di harga 80¢ → saat profit {form.takeProfitTier1Pct}%, jual ${(5).toFixed(0)} → sisa shares jalan tanpa risiko
+                      </div>
+                    </div>
+
+                    {/* Tier 2 */}
+                    <div className="space-y-2 rounded-md border border-primary/20 bg-primary/5 p-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="text-xs font-semibold text-primary">Tier 2 — Ambil 50% Sisa</span>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            Jual 50% dari sisa shares yang masih jalan
+                          </p>
+                        </div>
+                        <span className="text-xs font-mono text-primary font-bold">+{form.takeProfitTier2Pct}%</span>
+                      </div>
+                      <Slider
+                        min={40}
+                        max={90}
+                        step={5}
+                        value={[form.takeProfitTier2Pct]}
+                        onValueChange={([v]) => setField("takeProfitTier2Pct", String(v))}
+                        className="w-full"
+                      />
+                    </div>
+
+                    {/* Tier 3 */}
+                    <div className="space-y-2 rounded-md border border-border p-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="text-xs font-semibold text-foreground">Tier 3 — Tutup Penuh</span>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            Tutup seluruh posisi yang tersisa
+                          </p>
+                        </div>
+                        <span className="text-xs font-mono font-bold">+{form.takeProfitTier3Pct}%</span>
+                      </div>
+                      <Slider
+                        min={80}
+                        max={200}
+                        step={10}
+                        value={[form.takeProfitTier3Pct]}
+                        onValueChange={([v]) => setField("takeProfitTier3Pct", String(v))}
+                        className="w-full"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-2 rounded-md bg-yes/10 border border-yes/20 px-3 py-2">
+                      <span className="text-[11px] text-yes font-medium">
+                        ✅ Tier 1 (+{form.takeProfitTier1Pct}%) → balik modal · Tier 2 (+{form.takeProfitTier2Pct}%) → jual 50% sisa · Tier 3 (+{form.takeProfitTier3Pct}%) → tutup penuh
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
