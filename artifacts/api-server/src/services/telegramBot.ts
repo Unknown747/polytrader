@@ -178,12 +178,107 @@ async function handleStatus(chatId: string | number): Promise<void> {
   await sendReply(chatId, lines.join("\n"));
 }
 
+async function handleOrders(chatId: string | number): Promise<void> {
+  const all = portfolioState.getOrders();
+  const recent = all.slice(0, 10);
+
+  if (recent.length === 0) {
+    await sendReply(chatId, "📭 <b>No orders found.</b>");
+    return;
+  }
+
+  const statusEmoji: Record<string, string> = {
+    open: "🟡",
+    filled: "🟢",
+    cancelled: "⚫",
+    partial: "🔵",
+  };
+
+  const lines = [`📜 <b>Recent Orders (last ${recent.length})</b>`, ""];
+
+  for (const order of recent) {
+    const emoji = statusEmoji[order.status] ?? "⚪";
+    const question =
+      order.marketQuestion.length > 50
+        ? order.marketQuestion.slice(0, 47) + "..."
+        : order.marketQuestion;
+    const date = new Date(order.createdAt).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
+
+    lines.push(
+      `${emoji} <b>${question}</b>`,
+      `${order.type} ${order.side} @ ${(order.price * 100).toFixed(0)}¢ | $${order.amount.toFixed(2)} | ${order.status.toUpperCase()}`,
+      `<code>${order.id}</code> · ${date}`,
+      ""
+    );
+  }
+
+  const openCount = all.filter((o) => o.status === "open").length;
+  if (openCount > 0) {
+    lines.push(`<i>💡 ${openCount} open order${openCount === 1 ? "" : "s"} — use /cancel &lt;id&gt; to cancel one</i>`);
+  }
+
+  await sendReply(chatId, lines.join("\n"));
+}
+
+async function handleCancel(chatId: string | number, args: string[]): Promise<void> {
+  const orderId = args[0];
+
+  if (!orderId) {
+    await sendReply(
+      chatId,
+      "❌ <b>Usage:</b> <code>/cancel &lt;order_id&gt;</code>\n\nUse /orders to see your order IDs."
+    );
+    return;
+  }
+
+  const all = portfolioState.getOrders();
+  const order = all.find((o) => o.id === orderId);
+
+  if (!order) {
+    await sendReply(
+      chatId,
+      `❌ <b>Order not found:</b> <code>${orderId}</code>\n\nUse /orders to see valid order IDs.`
+    );
+    return;
+  }
+
+  if (order.status !== "open") {
+    await sendReply(
+      chatId,
+      `⚠️ <b>Cannot cancel order <code>${orderId}</code></b>\n\nOrder is already <b>${order.status}</b>.`
+    );
+    return;
+  }
+
+  const cancelled = portfolioState.cancelOrder(orderId);
+
+  if (!cancelled) {
+    await sendReply(chatId, `❌ <b>Failed to cancel order</b> <code>${orderId}</code>.`);
+    return;
+  }
+
+  const question =
+    order.marketQuestion.length > 55
+      ? order.marketQuestion.slice(0, 52) + "..."
+      : order.marketQuestion;
+
+  await sendReply(
+    chatId,
+    `⚫ <b>Order cancelled</b>\n\n<b>${question}</b>\n${order.type} ${order.side} @ ${(order.price * 100).toFixed(0)}¢ | $${order.amount.toFixed(2)}\n<code>${orderId}</code>`
+  );
+}
+
 async function handleHelp(chatId: string | number): Promise<void> {
   const lines = [
     `🤖 <b>PolyTrader Bot Commands</b>`,
     "",
     `/balance — Portfolio balance and P&L summary`,
     `/positions — View all open positions`,
+    `/orders — Recent order history with fill status`,
+    `/cancel &lt;id&gt; — Cancel an open order by ID`,
     `/scan — Trigger a strategy scan for opportunities`,
     `/status — Auto-trader status and configuration`,
     `/help — Show this message`,
@@ -208,7 +303,9 @@ async function processUpdate(update: TelegramUpdate): Promise<void> {
   }
 
   const text = message.text.trim();
-  const command = text.split(" ")[0].replace(/@.*$/, "").toLowerCase();
+  const parts = text.split(/\s+/);
+  const command = parts[0].replace(/@.*$/, "").toLowerCase();
+  const args = parts.slice(1);
 
   logger.info({ command, chatId: incomingChatId }, "Telegram bot: received command");
 
@@ -218,6 +315,12 @@ async function processUpdate(update: TelegramUpdate): Promise<void> {
       break;
     case "/positions":
       await handlePositions(message.chat.id);
+      break;
+    case "/orders":
+      await handleOrders(message.chat.id);
+      break;
+    case "/cancel":
+      await handleCancel(message.chat.id, args);
       break;
     case "/scan":
       await handleScan(message.chat.id);

@@ -268,6 +268,8 @@ export default function Settings() {
             {[
               { cmd: "/balance", desc: "Portfolio value, P&L, and USDC balance" },
               { cmd: "/positions", desc: "All open positions with P&L" },
+              { cmd: "/orders", desc: "Recent order history with fill status" },
+              { cmd: "/cancel <id>", desc: "Cancel an open order by ID" },
               { cmd: "/scan", desc: "Trigger a strategy scan for opportunities" },
               { cmd: "/status", desc: "Auto-trader status and daily trade count" },
               { cmd: "/help", desc: "List all available commands" },
