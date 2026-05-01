@@ -1,4 +1,5 @@
 import type { NormalizedMarket } from "./polymarket";
+import db from "../lib/db";
 
 export interface StrategyConfig {
   autoTradingEnabled: boolean;
@@ -50,7 +51,35 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   maxOpportunities: 30,
 };
 
-let _config: StrategyConfig = { ...DEFAULT_CONFIG };
+function loadConfigFromDb(): StrategyConfig {
+  const config = { ...DEFAULT_CONFIG };
+  const rows = db.prepare("SELECT key, value FROM strategy_config").all() as { key: string; value: string }[];
+  for (const row of rows) {
+    const key = row.key as keyof StrategyConfig;
+    if (!(key in DEFAULT_CONFIG)) continue;
+    const defaultVal = DEFAULT_CONFIG[key];
+    if (typeof defaultVal === "boolean") {
+      (config as Record<string, unknown>)[key] = row.value === "true";
+    } else if (typeof defaultVal === "number") {
+      const n = parseFloat(row.value);
+      if (!isNaN(n)) (config as Record<string, unknown>)[key] = n;
+    }
+  }
+  return config;
+}
+
+function persistConfigToDb(config: StrategyConfig): void {
+  const upsert = db.prepare(
+    "INSERT OR REPLACE INTO strategy_config (key, value) VALUES (?, ?)"
+  );
+  db.transaction(() => {
+    for (const [key, val] of Object.entries(config)) {
+      upsert.run(key, String(val));
+    }
+  })();
+}
+
+let _config: StrategyConfig = loadConfigFromDb();
 
 export function getConfig(): StrategyConfig {
   return { ..._config };
@@ -58,6 +87,7 @@ export function getConfig(): StrategyConfig {
 
 export function updateConfig(patch: Partial<StrategyConfig>): StrategyConfig {
   _config = { ..._config, ...patch };
+  persistConfigToDb(_config);
   return { ..._config };
 }
 

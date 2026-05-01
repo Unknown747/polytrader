@@ -23,66 +23,102 @@ pnpm monorepo with the following artifacts and libraries:
 - **Dashboard** — Portfolio summary stats, cumulative P&L area chart, trending markets list
 - **Markets** — Browse/search/filter prediction markets (real Polymarket Gamma API with demo fallback)
 - **Market Detail** — Market info + buy/sell YES/NO order form
-- **Positions** — Open positions with unrealized P&L
+- **Positions** — Open positions with unrealized P&L (prices updated automatically every scan)
 - **Orders** — Order history with cancel support
 - **Portfolio** — Cumulative P&L chart, daily P&L bar chart, position breakdown, **live CLOB P&L panel** (real-time positions + realized trade history from Polymarket when credentials are set)
 - **Strategy Scanner** — Scans near-resolution high-probability markets (>80%, <21 days), composite scoring across 5 factors, half-Kelly sizing
 - **Backtester** — Simulates strategy on historical data, shows equity curve, win rate, Sharpe ratio, trade log
-- **Settings** — Wallet status (real USDC balance from CLOB), Telegram setup, strategy + auto-trading config, **auto-trading status panel** with recent trades, USDC balance, daily slot counter, and manual scan trigger
+- **Settings** — Wallet status (real USDC balance from CLOB), Telegram setup, strategy + auto-trading config, auto-trading status panel with recent trades, USDC balance, daily slot counter, and manual scan trigger
 
 ## Backend Services
 
 | File | Responsibility |
 |------|---------------|
 | `services/polymarket.ts` | Polymarket Gamma API client — 5-min cache, retry (3×), multi-page fetch (up to 1 000 markets), tokenId parsing from `clobTokenIds` |
-| `services/strategy.ts` | Composite scoring: edge 35%, expected return 20%, time urgency 20%, liquidity 15%, volume 10%. Configurable `minLiquidity` and `maxOpportunities`. |
+| `services/strategy.ts` | Composite scoring: edge 35%, expected return 20%, time urgency 20%, liquidity 15%, volume 10%. Config persisted to SQLite (`strategy_config` table) — survives server restarts. |
 | `services/backtest.ts` | Realistic simulation: win rate from entry price, 30 unique market templates, randomised trade timing |
 | `services/telegram.ts` | Retry (3×) + rate-limit handling, top-5 opportunities, real portfolio data in daily reports |
-| `services/telegramBot.ts` | Long-polling command bot: `/balance`, `/positions`, `/orders`, `/cancel`, `/markets`, `/scan`, `/status`, `/help`. Rate limiting per command, inline keyboard confirmation for cancellations, `lastUpdateId` persisted in `poly.db` so restarts don't replay old commands. |
-| `lib/db.ts` | SQLite singleton using `better-sqlite3`. Opens `artifacts/api-server/poly.db` (WAL mode). Tables: `portfolio_orders`, `portfolio_positions`, `portfolio_pnl`, `bot_state`. |
-| `services/scheduler.ts` | Immediate first scan (5 s delay), interval scan, daily report; calls `executeOpportunities()` when auto-trading is on |
+| `services/telegramBot.ts` | Long-polling command bot: 10 commands (see below). Rate limiting per command, inline keyboard confirmation for cancellations, `lastUpdateId` persisted in `poly.db`. |
+| `lib/db.ts` | SQLite singleton using `better-sqlite3`. Opens `poly.db` (WAL mode). Tables: `portfolio_orders`, `portfolio_positions`, `portfolio_pnl`, `bot_state`, `strategy_config`, `auto_trade_history`. |
+| `services/scheduler.ts` | Runs every N minutes: (1) fetches live markets, (2) **updates all position prices from live market data**, (3) scans for opportunities, (4) sends Telegram alerts if enabled, (5) executes auto-trades if enabled. |
 | `services/clob.ts` | **Polymarket CLOB API client** — EIP-712 order signing (ethers.js v6), L2 HMAC-SHA256 auth, `placeOrder()`, `getUsdcBalance()`, `getFilledTrades()`, `getLivePositions()`, `computeLivePnlHistory()` |
-| `services/autoTrader.ts` | **Auto-trading engine** — daily trade counter, Kelly-fraction sizing capped by `maxPositionPct`, one trade per market/side per day, `executeOpportunities()` places real orders (YES→BUY, NO→SELL) and updates portfolio state |
+| `services/autoTrader.ts` | **Auto-trading engine** — DB-backed trade history (`auto_trade_history`), daily trade counter from DB (survives restarts), Kelly-fraction sizing capped by `maxPositionPct`, one trade per market/side per day, `executeOpportunities()` places real orders (YES→BUY, NO→SELL). |
+| `app.ts` | Express app with rate limiting: 200 req/15 min general, 30 req/min for write endpoints (`/orders`, `/telegram`, `/auto-trading/scan`). |
+
+## Telegram Bot Commands
+
+| Command | Description |
+|---------|-------------|
+| `/balance` | Portfolio value, P&L summary, optional live USDC balance |
+| `/positions` | All open positions with P&L per position |
+| `/orders` | Recent 10 orders with fill status |
+| `/cancel <id>` | Cancel open order with inline keyboard confirmation |
+| `/pnl` | P&L history table for the last 14 days with cumulative total |
+| `/config` | View all strategy settings; update any with `/config <key> <value>` |
+| `/markets <keyword>` | Search Polymarket markets by keyword |
+| `/scan` | Trigger a strategy scan for opportunities (60s cooldown) |
+| `/status` | Auto-trader status: trades today, remaining slots, lifetime count, last scan/trade times |
+| `/help` | List all commands |
+
+**Config keys updateable via `/config <key> <value>`:**
+- Numbers: `bankroll`, `maxPositionPct`, `minEdge`, `minProbability`, `maxDaysToResolution`, `minVolume24h`, `minLiquidity`, `scanIntervalMinutes`, `maxDailyTrades`, `maxOpportunities`
+- Booleans: `autoTradingEnabled`, `telegramAlertsEnabled`
 
 ## API Routes
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/health` | Server health check |
+| GET | `/api/healthz` | Server health check |
 | GET | `/api/markets` | List/search markets |
+| GET | `/api/markets/trending` | Top 5 trending markets by 24h volume |
 | GET | `/api/markets/:id` | Market detail |
-| GET/POST | `/api/orders` | List orders / place new order |
+| GET | `/api/orders` | List orders |
+| POST | `/api/orders` | Place new order |
 | DELETE | `/api/orders/:id` | Cancel order |
-| GET | `/api/positions` | Open positions |
-| GET | `/api/portfolio/summary` | Portfolio summary metrics |
-| GET | `/api/portfolio/pnl` | P&L history (in-memory) |
+| GET | `/api/positions` | Open positions (prices updated live) |
+| GET | `/api/portfolio/summary` | Portfolio summary (bankroll-synced) |
+| GET | `/api/portfolio/pnl` | P&L history from SQLite |
 | GET | `/api/portfolio/live` | **Live P&L from CLOB** — real positions, realized trade history, USDC balance |
 | GET | `/api/strategy/opportunities` | Scanned opportunities |
-| GET/POST | `/api/strategy/config` | Read/update strategy config |
+| GET | `/api/strategy/config` | Read strategy config (from SQLite) |
+| PUT | `/api/strategy/config` | Update strategy config (persisted to SQLite) |
 | POST | `/api/strategy/backtest` | Run backtest simulation |
 | GET | `/api/wallet/status` | Wallet connection + real USDC balance |
-| GET/POST | `/api/telegram/test` | Telegram bot test |
-| GET | `/api/auto-trading/status` | Auto-trader status, USDC balance, recent trades |
-| GET | `/api/auto-trading/history` | Last 100 executed trades |
+| POST | `/api/telegram/test` | Send a test Telegram notification |
+| GET | `/api/auto-trading/status` | Auto-trader status, USDC balance, recent trades from DB |
+| GET | `/api/auto-trading/history` | Full trade history from SQLite |
 | POST | `/api/auto-trading/trigger` | Trigger manual scan + execution cycle |
+
+## SQLite Database (`poly.db`)
+
+| Table | Content |
+|-------|---------|
+| `portfolio_orders` | All orders (seeded + placed) |
+| `portfolio_positions` | Current positions with live-updated prices |
+| `portfolio_pnl` | Daily P&L and cumulative history |
+| `bot_state` | Telegram bot `lastUpdateId` for replay protection |
+| `strategy_config` | Persisted strategy config (survives restart) |
+| `auto_trade_history` | All auto-executed trades with success/error status |
 
 ## Shared State
 
-- **`lib/state.ts`** — In-memory `PortfolioState` class: orders, positions, PnL history. Orders placed via `/api/orders` or by `autoTrader` automatically create/update positions and append PnL points. Portfolio summary is computed live.
+- **`lib/state.ts`** — `PortfolioState` class backed by SQLite. Orders placed via `/api/orders` or by `autoTrader` automatically create/update positions and append PnL points. Portfolio summary uses `bankroll` from `strategy_config` (not hardcoded). Position prices updated every scan cycle via `updatePositionPrices(priceMap)`.
 
 ## Data Mode
 
-| Feature | When credentials absent | When credentials present |
+| Feature | Without credentials | With credentials |
 |---------|------------------------|-------------------------|
 | Markets | Live Gamma API, demo fallback | Live Gamma API |
-| Orders / Positions / Portfolio | In-memory demo state | In-memory state (updated by real fills) |
+| Orders / Positions | SQLite-persisted demo state | SQLite state (updated by real fills) |
+| Strategy Config | Persisted to SQLite | Persisted to SQLite |
+| Auto-trade History | Persisted to SQLite | Persisted to SQLite |
 | USDC Balance | `$0.00` | Real balance from CLOB |
 | Live P&L panel | "Not configured" message | Real positions + realized trade history from CLOB |
 | Auto-trading | Disabled, shows warning | Places EIP-712 signed orders on CLOB |
 
 ## Auto-Trading Setup
 
-To enable live order execution on Polymarket CLOB, set these environment variables in Replit Secrets:
+Set these in Replit Secrets:
 
 | Variable | Description |
 |----------|-------------|
@@ -90,21 +126,20 @@ To enable live order execution on Polymarket CLOB, set these environment variabl
 | `POLYMARKET_API_KEY` | Polymarket CLOB L2 API key |
 | `POLYMARKET_API_SECRET` | Polymarket CLOB L2 API secret (HMAC-SHA256 signing) |
 | `POLYMARKET_API_PASSPHRASE` | Polymarket CLOB L2 API passphrase |
-| `TELEGRAM_BOT_TOKEN` | (Optional) Telegram bot token for alerts |
-| `TELEGRAM_CHAT_ID` | (Optional) Telegram chat/channel ID for alerts |
+| `TELEGRAM_BOT_TOKEN` | (Optional) Telegram bot token for alerts and commands |
+| `TELEGRAM_CHAT_ID` | (Optional) Telegram chat/channel ID — bot only responds to this ID |
 
 **Order signing flow:**
 1. EIP-712 typed-data signature using `POLYMARKET_PRIVATE_KEY` (ethers.js Wallet)
-2. L2 HMAC-SHA256 header (`POLY_SIGNATURE`) computed from `timestamp + METHOD + path + body` using `POLYMARKET_API_SECRET`
+2. L2 HMAC-SHA256 header (`POLY_SIGNATURE`) computed from `timestamp + METHOD + path + body`
 3. Order submitted to `https://clob.polymarket.com/order` as GTC limit order
-
-After setting credentials, go to **Settings → Auto-Trading Config**, enable the toggle, and set `maxDailyTrades`. The scanner will start placing real orders automatically on each scan interval.
 
 ## Development
 
 - Frontend auto-refreshes via Vite HMR
 - Backend rebuilds on workflow restart (esbuild, ~200 ms)
-- API contract is defined in `lib/api-spec/openapi.yaml` — edit there, then run `pnpm --filter @workspace/api-spec run codegen`
+- API contract defined in `lib/api-spec/openapi.yaml` — edit there, then run `pnpm --filter @workspace/api-spec run codegen`
+- Graceful shutdown on `SIGTERM`/`SIGINT`: stops Telegram bot polling and clears scheduler timers
 - Workflows: `PORT=8080 pnpm --filter @workspace/api-server run dev` and `PORT=23789 BASE_PATH=/ pnpm --filter @workspace/polymarket-trader run dev`
 
 ## Key Files
@@ -112,10 +147,13 @@ After setting credentials, go to **Settings → Auto-Trading Config**, enable th
 | File | Purpose |
 |------|---------|
 | `lib/api-spec/openapi.yaml` | API contract (source of truth) |
-| `artifacts/api-server/src/lib/state.ts` | In-memory portfolio state |
+| `artifacts/api-server/src/lib/db.ts` | SQLite setup, schema, all 6 tables |
+| `artifacts/api-server/src/lib/state.ts` | Portfolio state (SQLite-backed, bankroll-synced) |
+| `artifacts/api-server/src/services/strategy.ts` | Strategy config (SQLite-persisted) + opportunity scanner |
 | `artifacts/api-server/src/services/clob.ts` | CLOB API client (signing + live data) |
-| `artifacts/api-server/src/services/autoTrader.ts` | Auto-trading execution engine |
-| `artifacts/api-server/src/services/scheduler.ts` | Scan scheduler + auto-trade hook |
-| `artifacts/api-server/src/routes/` | Backend route handlers |
+| `artifacts/api-server/src/services/autoTrader.ts` | Auto-trading engine (DB-backed history) |
+| `artifacts/api-server/src/services/scheduler.ts` | Scan scheduler (price updates + alerts + auto-trade) |
+| `artifacts/api-server/src/services/telegramBot.ts` | 10-command Telegram bot with /pnl and /config |
+| `artifacts/api-server/src/app.ts` | Express app with rate limiting |
 | `artifacts/polymarket-trader/src/pages/Portfolio.tsx` | Portfolio page with live CLOB panel |
-| `artifacts/polymarket-trader/src/pages/Settings.tsx` | Settings page with auto-trading status |
+| `artifacts/polymarket-trader/src/pages/Settings.tsx` | Settings page with Telegram bot command reference |

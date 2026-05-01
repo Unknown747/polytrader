@@ -270,6 +270,8 @@ export default function Settings() {
               { cmd: "/positions", desc: "All open positions with P&L" },
               { cmd: "/orders", desc: "Recent order history with fill status" },
               { cmd: "/cancel <id>", desc: "Cancel an open order (with confirmation)" },
+              { cmd: "/pnl", desc: "P&L history for the last 14 days" },
+              { cmd: "/config", desc: "View or update strategy settings (e.g. /config bankroll 500)" },
               { cmd: "/markets <keyword>", desc: "Search Polymarket markets by keyword" },
               { cmd: "/scan", desc: "Trigger a strategy scan for opportunities" },
               { cmd: "/status", desc: "Auto-trader status and daily trade count" },

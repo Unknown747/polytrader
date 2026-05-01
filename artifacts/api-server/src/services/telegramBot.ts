@@ -2,7 +2,7 @@ import { logger } from "../lib/logger";
 import db from "../lib/db";
 import { portfolioState } from "../lib/state";
 import { getAutoTraderStats } from "./autoTrader";
-import { getConfig, scanOpportunities } from "./strategy";
+import { getConfig, updateConfig, scanOpportunities } from "./strategy";
 import { getCachedMarkets } from "./polymarket";
 import { isClobConfigured, getUsdcBalance } from "./clob";
 
@@ -36,6 +36,8 @@ const COOLDOWNS_MS: Record<string, number> = {
   "/orders": 5_000,
   "/status": 10_000,
   "/markets": 10_000,
+  "/pnl": 10_000,
+  "/config": 5_000,
 };
 
 const lastUsed = new Map<string, number>();
@@ -412,6 +414,106 @@ async function handleStatus(chatId: string | number): Promise<void> {
   await sendReply(chatId, lines.join("\n"));
 }
 
+async function handlePnl(chatId: string | number): Promise<void> {
+  interface PnlRow { date: string; pnl: number; cumulative: number }
+  const rows = db.prepare(
+    "SELECT date, pnl, cumulative FROM portfolio_pnl ORDER BY date DESC LIMIT 14"
+  ).all() as PnlRow[];
+
+  if (rows.length === 0) {
+    await sendReply(chatId, "📭 <b>No P&L history yet.</b>\n\nPlace trades to start tracking.");
+    return;
+  }
+
+  const sorted = [...rows].reverse();
+  const lines = [`📊 <b>P&L History (last ${sorted.length} days)</b>`, ""];
+
+  for (const row of sorted) {
+    const sign = row.pnl >= 0 ? "+" : "";
+    const cumSign = row.cumulative >= 0 ? "+" : "";
+    const bar = row.pnl > 0 ? "🟢" : row.pnl < 0 ? "🔴" : "⚪";
+    lines.push(
+      `${bar} <b>${row.date}</b>  ${sign}$${row.pnl.toFixed(2)}  (cum: ${cumSign}$${row.cumulative.toFixed(2)})`
+    );
+  }
+
+  const latest = sorted[sorted.length - 1];
+  const total = latest.cumulative;
+  const totalSign = total >= 0 ? "+" : "";
+  const totalEmoji = total >= 0 ? "📈" : "📉";
+  lines.push("", `${totalEmoji} <b>Total P&L: ${totalSign}$${total.toFixed(2)}</b>`);
+
+  await sendReply(chatId, lines.join("\n"));
+}
+
+const CONFIG_NUMERIC_KEYS = new Set([
+  "bankroll", "maxPositionPct", "minEdge", "minProbability",
+  "maxDaysToResolution", "minVolume24h", "minLiquidity",
+  "scanIntervalMinutes", "maxDailyTrades", "maxOpportunities",
+]);
+
+const CONFIG_BOOL_KEYS = new Set([
+  "autoTradingEnabled", "telegramAlertsEnabled",
+]);
+
+async function handleConfig(chatId: string | number, args: string[]): Promise<void> {
+  const config = getConfig();
+
+  if (args.length === 0) {
+    const boolEmoji = (v: boolean) => v ? "✅" : "❌";
+    const lines = [
+      `⚙️ <b>Strategy Configuration</b>`,
+      "",
+      `<b>Trading</b>`,
+      `  Auto-trading: ${boolEmoji(config.autoTradingEnabled)} | Alerts: ${boolEmoji(config.telegramAlertsEnabled)}`,
+      `  Bankroll: $${config.bankroll} | Max position: ${config.maxPositionPct}%`,
+      `  Daily limit: ${config.maxDailyTrades} trades | Max opps: ${config.maxOpportunities}`,
+      "",
+      `<b>Filters</b>`,
+      `  Min edge: ${(config.minEdge * 100).toFixed(1)}% | Min prob: ${(config.minProbability * 100).toFixed(0)}%`,
+      `  Max days to resolve: ${config.maxDaysToResolution}d`,
+      `  Min 24h vol: $${config.minVolume24h} | Min liquidity: $${config.minLiquidity}`,
+      `  Scan interval: every ${config.scanIntervalMinutes} min`,
+      "",
+      `<i>💡 Update with: /config &lt;key&gt; &lt;value&gt;</i>`,
+      `<i>e.g. /config bankroll 500 | /config autoTradingEnabled true</i>`,
+    ];
+    await sendReply(chatId, lines.join("\n"));
+    return;
+  }
+
+  if (args.length < 2) {
+    await sendReply(chatId, "❌ <b>Usage:</b> <code>/config &lt;key&gt; &lt;value&gt;</code>\n\nRun <code>/config</code> to see all settings.");
+    return;
+  }
+
+  const [key, rawValue] = args;
+
+  if (CONFIG_BOOL_KEYS.has(key)) {
+    if (rawValue !== "true" && rawValue !== "false") {
+      await sendReply(chatId, `❌ <b>${key}</b> must be <code>true</code> or <code>false</code>.`);
+      return;
+    }
+    updateConfig({ [key]: rawValue === "true" } as Record<string, boolean>);
+    await sendReply(chatId, `✅ <b>${key}</b> set to <b>${rawValue}</b>`);
+    return;
+  }
+
+  if (CONFIG_NUMERIC_KEYS.has(key)) {
+    const num = parseFloat(rawValue);
+    if (isNaN(num) || num < 0) {
+      await sendReply(chatId, `❌ <b>${key}</b> must be a positive number.`);
+      return;
+    }
+    updateConfig({ [key]: num } as Record<string, number>);
+    await sendReply(chatId, `✅ <b>${key}</b> set to <b>${num}</b>`);
+    return;
+  }
+
+  const validKeys = [...CONFIG_NUMERIC_KEYS, ...CONFIG_BOOL_KEYS].join(", ");
+  await sendReply(chatId, `❌ Unknown config key: <code>${key}</code>\n\nValid keys: <code>${validKeys}</code>`);
+}
+
 async function handleHelp(chatId: string | number): Promise<void> {
   const lines = [
     `🤖 <b>PolyTrader Bot Commands</b>`,
@@ -420,6 +522,8 @@ async function handleHelp(chatId: string | number): Promise<void> {
     `/positions — View all open positions`,
     `/orders — Recent order history with fill status`,
     `/cancel &lt;id&gt; — Cancel an open order (with confirmation)`,
+    `/pnl — P&L history for the last 14 days`,
+    `/config — View or update strategy settings`,
     `/markets &lt;keyword&gt; — Search Polymarket markets`,
     `/scan — Trigger a strategy scan for opportunities`,
     `/status — Auto-trader status and configuration`,
@@ -514,6 +618,8 @@ async function processMessage(message: TelegramMessage): Promise<void> {
     case "/positions":   await handlePositions(message.chat.id); break;
     case "/orders":      await handleOrders(message.chat.id); break;
     case "/cancel":      await handleCancelRequest(message.chat.id, args); break;
+    case "/pnl":         await handlePnl(message.chat.id); break;
+    case "/config":      await handleConfig(message.chat.id, args); break;
     case "/markets":     await handleMarkets(message.chat.id, args); break;
     case "/scan":        await handleScan(message.chat.id); break;
     case "/status":      await handleStatus(message.chat.id); break;

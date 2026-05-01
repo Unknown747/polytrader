@@ -16,38 +16,54 @@ async function runScan() {
     return;
   }
 
-  const config = getConfig();
-  if (!config.telegramAlertsEnabled && !config.autoTradingEnabled) return;
-
   isScanning = true;
   try {
     invalidateCache();
     const markets = await getCachedMarkets();
-    const opportunities = scanOpportunities(markets, config);
 
-    const newOps = opportunities.filter(
-      (op) => !lastOpportunityIds.has(`${op.marketId}-${op.recommendedSide}`)
-    );
-
-    lastOpportunityIds = new Set(
-      opportunities.map((op) => `${op.marketId}-${op.recommendedSide}`)
-    );
-
-    if (newOps.length > 0 && config.telegramAlertsEnabled) {
-      await notifyOpportunities(newOps);
+    // Update position prices from latest market data (always, not just when alerts enabled)
+    if (markets.length > 0) {
+      const priceMap = new Map<string, number>();
+      for (const m of markets) {
+        priceMap.set(m.id, m.yesPrice);
+      }
+      portfolioState.updatePositionPrices(priceMap);
+      logger.info({ marketsUpdated: priceMap.size }, "Position prices updated from market data");
     }
 
-    logger.info(
-      { total: opportunities.length, new: newOps.length },
-      "Strategy scan complete"
-    );
+    const config = getConfig();
+    const opportunities = scanOpportunities(markets, config);
 
-    if (config.autoTradingEnabled) {
-      const executed = await executeOpportunities(opportunities, config);
-      if (executed.length > 0) {
-        const succeeded = executed.filter((t) => t.success).length;
-        logger.info({ executed: executed.length, succeeded }, "Auto-trading cycle done");
+    if (config.telegramAlertsEnabled || config.autoTradingEnabled) {
+      const newOps = opportunities.filter(
+        (op) => !lastOpportunityIds.has(`${op.marketId}-${op.recommendedSide}`)
+      );
+
+      lastOpportunityIds = new Set(
+        opportunities.map((op) => `${op.marketId}-${op.recommendedSide}`)
+      );
+
+      if (newOps.length > 0 && config.telegramAlertsEnabled) {
+        await notifyOpportunities(newOps);
       }
+
+      logger.info(
+        { total: opportunities.length, new: newOps.length },
+        "Strategy scan complete"
+      );
+
+      if (config.autoTradingEnabled) {
+        const executed = await executeOpportunities(opportunities, config);
+        if (executed.length > 0) {
+          const succeeded = executed.filter((t) => t.success).length;
+          logger.info({ executed: executed.length, succeeded }, "Auto-trading cycle done");
+        }
+      }
+    } else {
+      logger.info(
+        { total: opportunities.length },
+        "Strategy scan complete (alerts and auto-trading off)"
+      );
     }
   } catch (e) {
     logger.error({ err: e }, "Strategy scan failed");

@@ -3,8 +3,10 @@ import type { Opportunity, StrategyConfig } from "./strategy";
 import { placeOrder, isClobConfigured, getUsdcBalance } from "./clob";
 import { portfolioState } from "../lib/state";
 import { notifyOrderFilled, notifyDailyReport } from "./telegram";
+import db from "../lib/db";
 
 export interface TradeRecord {
+  id?: number;
   timestamp: Date;
   marketId: string;
   question: string;
@@ -31,7 +33,59 @@ export interface AutoTraderStats {
   usdcBalance: number;
 }
 
-const tradeHistory: TradeRecord[] = [];
+interface DbTradeRecord {
+  id: number;
+  timestamp: string;
+  market_id: string;
+  question: string;
+  side: "YES" | "NO";
+  price: number;
+  amount: number;
+  edge: number;
+  composite_score: number;
+  order_id: string | null;
+  success: number;
+  error: string | null;
+}
+
+function rowToTradeRecord(row: DbTradeRecord): TradeRecord {
+  return {
+    id: row.id,
+    timestamp: new Date(row.timestamp),
+    marketId: row.market_id,
+    question: row.question,
+    side: row.side,
+    price: row.price,
+    amount: row.amount,
+    edge: row.edge,
+    compositeScore: row.composite_score,
+    orderId: row.order_id ?? undefined,
+    success: row.success === 1,
+    error: row.error ?? undefined,
+  };
+}
+
+function persistTrade(record: TradeRecord): number {
+  const result = db.prepare(
+    `INSERT INTO auto_trade_history
+     (timestamp, market_id, question, side, price, amount, edge, composite_score, order_id, success, error)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    record.timestamp.toISOString(),
+    record.marketId,
+    record.question,
+    record.side,
+    record.price,
+    record.amount,
+    record.edge,
+    record.compositeScore,
+    record.orderId ?? null,
+    record.success ? 1 : 0,
+    record.error ?? null
+  );
+  return result.lastInsertRowid as number;
+}
+
 let lastScanAt: Date | null = null;
 let lastTradeAt: Date | null = null;
 let cachedBalance = 0;
@@ -45,10 +99,12 @@ function todayStart(): number {
 }
 
 function tradesToday(): number {
-  const start = todayStart();
-  return tradeHistory.filter(
-    (t) => t.timestamp.getTime() >= start && t.success
-  ).length;
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const row = db.prepare(
+    "SELECT COUNT(*) as c FROM auto_trade_history WHERE success = 1 AND timestamp >= ?"
+  ).get(start.toISOString()) as { c: number };
+  return row.c;
 }
 
 async function getBalance(): Promise<number> {
@@ -63,13 +119,13 @@ async function getBalance(): Promise<number> {
 }
 
 function shouldSkipMarket(marketId: string, side: "YES" | "NO"): boolean {
-  const dayStart = todayStart();
-  return tradeHistory.some(
-    (t) =>
-      t.marketId === marketId &&
-      t.side === side &&
-      t.timestamp.getTime() >= dayStart
-  );
+  const dayStart = new Date();
+  dayStart.setHours(0, 0, 0, 0);
+  const row = db.prepare(
+    `SELECT COUNT(*) as c FROM auto_trade_history
+     WHERE market_id = ? AND side = ? AND timestamp >= ?`
+  ).get(marketId, side, dayStart.toISOString()) as { c: number };
+  return row.c > 0;
 }
 
 export async function executeOpportunities(
@@ -165,7 +221,8 @@ export async function executeOpportunities(
       error: result.error,
     };
 
-    tradeHistory.push(record);
+    const insertedId = persistTrade(record);
+    record.id = insertedId;
     executed.push(record);
 
     if (result.success) {
@@ -222,9 +279,22 @@ export async function executeOpportunities(
 export async function getAutoTraderStats(config: StrategyConfig): Promise<AutoTraderStats> {
   const today = tradesToday();
   const balance = config.autoTradingEnabled ? await getBalance() : cachedBalance;
-  const recent = [...tradeHistory]
-    .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
-    .slice(0, 20);
+
+  const recentRows = db.prepare(
+    `SELECT * FROM auto_trade_history ORDER BY timestamp DESC LIMIT 20`
+  ).all() as DbTradeRecord[];
+
+  const totalRow = db.prepare(
+    "SELECT COUNT(*) as c FROM auto_trade_history WHERE success = 1"
+  ).get() as { c: number };
+
+  const lastTradeRow = db.prepare(
+    "SELECT timestamp FROM auto_trade_history WHERE success = 1 ORDER BY timestamp DESC LIMIT 1"
+  ).get() as { timestamp: string } | undefined;
+
+  if (lastTradeRow && !lastTradeAt) {
+    lastTradeAt = new Date(lastTradeRow.timestamp);
+  }
 
   return {
     enabled: config.autoTradingEnabled,
@@ -232,14 +302,17 @@ export async function getAutoTraderStats(config: StrategyConfig): Promise<AutoTr
     tradesToday: today,
     maxDailyTrades: config.maxDailyTrades,
     remainingSlots: Math.max(0, config.maxDailyTrades - today),
-    totalTradesLifetime: tradeHistory.filter((t) => t.success).length,
+    totalTradesLifetime: totalRow.c,
     lastScanAt,
     lastTradeAt,
-    recentTrades: recent,
+    recentTrades: recentRows.map(rowToTradeRecord),
     usdcBalance: balance,
   };
 }
 
 export function getTradeHistory(): TradeRecord[] {
-  return [...tradeHistory].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+  const rows = db.prepare(
+    "SELECT * FROM auto_trade_history ORDER BY timestamp DESC"
+  ).all() as DbTradeRecord[];
+  return rows.map(rowToTradeRecord);
 }

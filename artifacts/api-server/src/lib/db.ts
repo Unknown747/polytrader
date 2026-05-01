@@ -50,6 +50,26 @@ db.exec(`
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS strategy_config (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS auto_trade_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL,
+    market_id TEXT NOT NULL,
+    question TEXT NOT NULL,
+    side TEXT NOT NULL CHECK(side IN ('YES','NO')),
+    price REAL NOT NULL,
+    amount REAL NOT NULL,
+    edge REAL NOT NULL,
+    composite_score REAL NOT NULL,
+    order_id TEXT,
+    success INTEGER NOT NULL CHECK(success IN (0,1)),
+    error TEXT
+  );
 `);
 
 logger.info({ path: DB_PATH }, "SQLite database opened (poly.db)");

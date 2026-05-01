@@ -1,4 +1,5 @@
 import db from "./db";
+import { getConfig } from "../services/strategy";
 
 export type OrderStatus = "open" | "filled" | "cancelled" | "partial";
 
@@ -148,7 +149,6 @@ function rowToPosition(row: DbPosition): PositionEntry {
 }
 
 class PortfolioState {
-  private readonly INITIAL_BANKROLL = 1000;
 
   private nextOrderId(): string {
     const row = db.prepare(
@@ -266,6 +266,32 @@ class PortfolioState {
     }
   }
 
+  updatePositionPrices(priceMap: Map<string, number>): void {
+    const positions = db.prepare(
+      "SELECT id, market_id, side, shares, avg_price FROM portfolio_positions"
+    ).all() as { id: string; market_id: string; side: string; shares: number; avg_price: number }[];
+
+    const update = db.prepare(
+      `UPDATE portfolio_positions
+       SET current_price = ?, pnl = ?, pnl_percent = ?, value = ?
+       WHERE id = ?`
+    );
+
+    db.transaction(() => {
+      for (const pos of positions) {
+        const currentPrice = priceMap.get(pos.market_id);
+        if (currentPrice === undefined) continue;
+
+        const value = Math.round(pos.shares * currentPrice * 100) / 100;
+        const cost = Math.round(pos.shares * pos.avg_price * 100) / 100;
+        const pnl = Math.round((value - cost) * 100) / 100;
+        const pnlPercent = cost > 0 ? Math.round((pnl / cost) * 10000) / 100 : 0;
+
+        update.run(currentPrice, pnl, pnlPercent, value, pos.id);
+      }
+    })();
+  }
+
   getSummary() {
     const positions = this.getPositions();
     const orders = this.getOrders();
@@ -284,7 +310,8 @@ class PortfolioState {
       ? Math.round((winningOrders.length / filledOrders.length) * 1000) / 10
       : 0;
 
-    const availableBalance = Math.max(0, Math.round((this.INITIAL_BANKROLL - investedAmount) * 100) / 100);
+    const bankroll = getConfig().bankroll;
+    const availableBalance = Math.max(0, Math.round((bankroll - investedAmount) * 100) / 100);
     const totalValue = Math.round((availableBalance + currentValue) * 100) / 100;
     const totalPnlPct = investedAmount > 0
       ? Math.round((totalPnl / investedAmount) * 10000) / 100
