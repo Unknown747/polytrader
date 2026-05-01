@@ -261,6 +261,25 @@ export default function Settings() {
           </ol>
         </div>
 
+        <div className="rounded-lg bg-background/60 border border-border p-3.5 text-xs text-muted-foreground leading-relaxed mb-4">
+          <p className="font-medium text-foreground mb-1.5">Bot commands</p>
+          <p className="mb-2 text-[11px]">Once configured, message your bot directly in Telegram to control your portfolio:</p>
+          <div className="space-y-1">
+            {[
+              { cmd: "/balance", desc: "Portfolio value, P&L, and USDC balance" },
+              { cmd: "/positions", desc: "All open positions with P&L" },
+              { cmd: "/scan", desc: "Trigger a strategy scan for opportunities" },
+              { cmd: "/status", desc: "Auto-trader status and daily trade count" },
+              { cmd: "/help", desc: "List all available commands" },
+            ].map(({ cmd, desc }) => (
+              <div key={cmd} className="flex items-baseline gap-2">
+                <span className="text-primary font-mono shrink-0">{cmd}</span>
+                <span className="text-muted-foreground">— {desc}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
         <div className="flex items-center gap-3">
           <Button
             variant="outline"

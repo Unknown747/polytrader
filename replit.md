@@ -38,6 +38,7 @@ pnpm monorepo with the following artifacts and libraries:
 | `services/strategy.ts` | Composite scoring: edge 35%, expected return 20%, time urgency 20%, liquidity 15%, volume 10%. Configurable `minLiquidity` and `maxOpportunities`. |
 | `services/backtest.ts` | Realistic simulation: win rate from entry price, 30 unique market templates, randomised trade timing |
 | `services/telegram.ts` | Retry (3×) + rate-limit handling, top-5 opportunities, real portfolio data in daily reports |
+| `services/telegramBot.ts` | Long-polling command bot: `/balance`, `/positions`, `/scan`, `/status`, `/help`. Only responds to authorized `TELEGRAM_CHAT_ID`. Starts automatically when `TELEGRAM_BOT_TOKEN` is set. |
 | `services/scheduler.ts` | Immediate first scan (5 s delay), interval scan, daily report; calls `executeOpportunities()` when auto-trading is on |
 | `services/clob.ts` | **Polymarket CLOB API client** — EIP-712 order signing (ethers.js v6), L2 HMAC-SHA256 auth, `placeOrder()`, `getUsdcBalance()`, `getOpenOrders()`, `getFilledTrades()`, `getLivePositions()`, `computeLivePnlHistory()` |
 | `services/autoTrader.ts` | **Auto-trading engine** — daily trade counter, Kelly-fraction sizing capped by `maxPositionPct`, one trade per market/side per day, `executeOpportunities()` places real orders and updates portfolio state |
