@@ -5,7 +5,7 @@ import {
   useGetWalletStatus,
   useTestTelegram,
 } from "@workspace/api-client-react";
-import { Settings2, Send, Wallet, Bot, AlertCircle, CheckCircle2, Zap, Activity, TrendingUp, PlayCircle, RotateCcw, Database, ChevronRight, Key, Shield, Bell, DollarSign, Info, RefreshCw, Calculator, FlaskConical, ShieldCheck } from "lucide-react";
+import { Settings2, Send, Wallet, Bot, AlertCircle, CheckCircle2, Zap, Activity, TrendingUp, PlayCircle, RotateCcw, Database, ChevronRight, Key, Shield, Bell, DollarSign, Info, RefreshCw, Calculator, FlaskConical, ShieldCheck, ShieldAlert, Percent, Timer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -114,6 +114,12 @@ type StrategyConfig = {
   categoryFilter: string;
   paperTradingMode: boolean;
   paperBankroll: number;
+  paperSlippagePct: number;
+  paperTakerFeePct: number;
+  volatilityCheckEnabled: boolean;
+  volatilityThresholdPct: number;
+  cooldownAfterLossEnabled: boolean;
+  maxRiskPerTradePct: number;
 };
 
 const WIZARD_STEPS = [
@@ -772,12 +778,19 @@ export default function Settings() {
 
   useEffect(() => {
     if (config && !form) {
+      const cfg = config as unknown as StrategyConfig;
       setForm({
         ...config,
-        autoCompound: (config as unknown as StrategyConfig).autoCompound ?? false,
-        categoryFilter: (config as unknown as StrategyConfig).categoryFilter ?? "",
-        paperTradingMode: (config as unknown as StrategyConfig).paperTradingMode ?? false,
-        paperBankroll: (config as unknown as StrategyConfig).paperBankroll ?? 1000,
+        autoCompound: cfg.autoCompound ?? false,
+        categoryFilter: cfg.categoryFilter ?? "",
+        paperTradingMode: cfg.paperTradingMode ?? false,
+        paperBankroll: cfg.paperBankroll ?? 1000,
+        paperSlippagePct: cfg.paperSlippagePct ?? 0.3,
+        paperTakerFeePct: cfg.paperTakerFeePct ?? 1.0,
+        volatilityCheckEnabled: cfg.volatilityCheckEnabled ?? false,
+        volatilityThresholdPct: cfg.volatilityThresholdPct ?? 5,
+        cooldownAfterLossEnabled: cfg.cooldownAfterLossEnabled ?? true,
+        maxRiskPerTradePct: cfg.maxRiskPerTradePct ?? 3,
       });
     }
   }, [config, form]);
@@ -1120,6 +1133,38 @@ export default function Settings() {
                     />
                     <div className="text-[10px] text-muted-foreground">Modal simulasi awal untuk paper trading. Hasil dilihat di halaman Analytics.</div>
                   </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs flex items-center gap-1">
+                        <Percent className="h-3 w-3" />
+                        Slippage (%)
+                      </Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        value={form.paperSlippagePct ?? 0.3}
+                        onChange={(e) => setField("paperSlippagePct", e.target.value)}
+                        min={0}
+                        max={5}
+                      />
+                      <div className="text-[10px] text-muted-foreground">Buy at ask+slip, sell at bid-slip</div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs flex items-center gap-1">
+                        <DollarSign className="h-3 w-3" />
+                        Taker Fee (%)
+                      </Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        value={form.paperTakerFeePct ?? 1.0}
+                        onChange={(e) => setField("paperTakerFeePct", e.target.value)}
+                        min={0}
+                        max={3}
+                      />
+                      <div className="text-[10px] text-muted-foreground">Deducted from proceeds on exit</div>
+                    </div>
+                  </div>
                   <div className="flex gap-2">
                     <Button
                       size="sm"
@@ -1322,6 +1367,95 @@ export default function Settings() {
                     </div>
                   </div>
                 )}
+              </div>
+            </div>
+
+            {/* ── Risk Management ── */}
+            <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-4">
+              <div className="flex items-center gap-2 mb-1">
+                <ShieldAlert className="h-4 w-4 text-primary" />
+                <div className="text-sm font-semibold text-foreground">Risk Management</div>
+              </div>
+
+              {/* Max risk per trade */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs flex items-center gap-1">
+                    <Percent className="h-3 w-3" />
+                    Max Risk Per Trade (% of balance)
+                  </Label>
+                  <span className="text-xs font-mono text-primary">{form.maxRiskPerTradePct ?? 3}%</span>
+                </div>
+                <Slider
+                  min={1}
+                  max={10}
+                  step={0.5}
+                  value={[form.maxRiskPerTradePct ?? 3]}
+                  onValueChange={([v]) => setField("maxRiskPerTradePct", String(v))}
+                  className="w-full"
+                />
+                <div className="text-[10px] text-muted-foreground">Hard cap on position size regardless of Kelly sizing. Recommended: 2–5%.</div>
+              </div>
+
+              {/* Volatility check */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-xs flex items-center gap-1">
+                      <Activity className="h-3 w-3" />
+                      Volatility Check
+                    </Label>
+                    <div className="text-[10px] text-muted-foreground mt-0.5">Skip entry if price moved more than threshold in last scan</div>
+                  </div>
+                  <Toggle
+                    checked={form.volatilityCheckEnabled ?? false}
+                    onChange={(v) => setField("volatilityCheckEnabled", v)}
+                    label=""
+                  />
+                </div>
+                {form.volatilityCheckEnabled && (
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs">Threshold (%)</Label>
+                      <span className="text-xs font-mono text-primary">{form.volatilityThresholdPct ?? 5}%</span>
+                    </div>
+                    <Slider
+                      min={1}
+                      max={20}
+                      step={0.5}
+                      value={[form.volatilityThresholdPct ?? 5]}
+                      onValueChange={([v]) => setField("volatilityThresholdPct", String(v))}
+                      className="w-full"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Cooldown after loss */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-xs flex items-center gap-1">
+                    <Timer className="h-3 w-3" />
+                    Cooldown After Consecutive Losses
+                  </Label>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">
+                    3 losses → 30min pause · 5% daily loss → pause until next day
+                  </div>
+                </div>
+                <Toggle
+                  checked={form.cooldownAfterLossEnabled ?? true}
+                  onChange={(v) => setField("cooldownAfterLossEnabled", v)}
+                  label=""
+                />
+              </div>
+
+              <div className="flex items-center gap-2 rounded-md bg-primary/10 border border-primary/20 px-3 py-2">
+                <ShieldCheck className="h-3.5 w-3.5 text-primary shrink-0" />
+                <span className="text-[11px] text-primary font-medium">
+                  Max {form.maxRiskPerTradePct ?? 3}% per trade
+                  {form.volatilityCheckEnabled ? ` · Skip if >${form.volatilityThresholdPct ?? 5}% vol` : ""}
+                  {form.cooldownAfterLossEnabled ? " · Loss cooldown active" : ""}
+                </span>
               </div>
             </div>
 

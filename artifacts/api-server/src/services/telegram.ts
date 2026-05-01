@@ -386,3 +386,76 @@ export async function notifyMarketResolved(params: {
   );
 }
 
+
+
+export async function notifyEmergencyStop(params: {
+  action: "stop" | "resume";
+  cancelled?: number;
+  errors?: number;
+}): Promise<void> {
+  if (!isTelegramConfigured()) return;
+  const { action, cancelled = 0, errors = 0 } = params;
+  if (action === "stop") {
+    await sendMessage(
+      `🚨 <b>EMERGENCY STOP ACTIVATED</b>\n\n` +
+      `Semua order telah dibatalkan.\n` +
+      `Orders cancelled: <b>${cancelled}</b>\n` +
+      (errors > 0 ? `Errors: <b>${errors}</b>\n` : "") +
+      `Auto-trading dinonaktifkan.\n\n` +
+      `<i>Gunakan /resume untuk mengaktifkan kembali.</i>`
+    );
+  } else {
+    await sendMessage(
+      `✅ <b>Trading Resumed</b>\n\n` +
+      `Emergency stop dihapus.\n` +
+      `Auto-trading siap diaktifkan kembali dari Settings.\n\n` +
+      `<i>Pastikan auto-trading enabled di Settings sebelum mulai.</i>`
+    );
+  }
+}
+
+export async function notifyHeartbeatFailure(params: {
+  failCount: number;
+}): Promise<void> {
+  if (!isTelegramConfigured()) return;
+  await sendMessage(
+    `💔 <b>Heartbeat Failure</b>\n\n` +
+    `Bot health check gagal <b>${params.failCount}x</b> berturut-turut.\n\n` +
+    `<i>Periksa status server dan workflow di Replit.</i>`
+  );
+}
+
+export async function notifyVolatilitySkip(params: {
+  question: string;
+  changePct: number;
+}): Promise<void> {
+  if (!isTelegramConfigured()) return;
+  await sendMessage(
+    `⚡ <b>Volatility Skip</b>\n\n` +
+    `Market terlalu volatile, trade dilewati.\n` +
+    `<b>${params.question}</b>\n` +
+    `Pergerakan harga: <b>${params.changePct.toFixed(1)}%</b> dalam 1 menit.`
+  );
+}
+
+export async function notifyLossCooldown(params: {
+  type: "consecutive" | "daily";
+  value: number;
+  until: Date;
+}): Promise<void> {
+  if (!isTelegramConfigured()) return;
+  const { type, value, until } = params;
+  if (type === "consecutive") {
+    await sendMessage(
+      `⏸️ <b>Loss Cooldown Aktif</b>\n\n` +
+      `${value} loss berturut-turut terdeteksi.\n` +
+      `Trading dijeda 30 menit hingga: <b>${until.toLocaleString()}</b>`
+    );
+  } else {
+    await sendMessage(
+      `⛔ <b>Daily Loss Limit</b>\n\n` +
+      `Kerugian harian mencapai <b>${value.toFixed(1)}%</b>.\n` +
+      `Trading dihentikan hingga hari berikutnya: <b>${until.toLocaleDateString()}</b>`
+    );
+  }
+}

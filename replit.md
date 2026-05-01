@@ -146,11 +146,20 @@ Eksekusi order otomatis via Polymarket CLOB API:
 - Auto-capital mode (posisi otomatis berdasarkan saldo nyata)
 - Auto-compound (reinvest profit ke bankroll)
 - Category filter (hanya trade kategori tertentu)
+- **Emergency Stop** (`/emergencystop` Telegram command) — cancel semua order + flag stop
+- **Volatility check** — skip entry jika harga bergerak >threshold% antar scan
+- **Cooldown after loss** — 3 consecutive losses → 30min pause; 5% daily loss → stop until next day
+- **Max risk per trade** — hard cap % dari balance terlepas dari Kelly sizing
+- **Minimum liquidity check** — skip jika vol24h < $500 atau market depth < $1000
+- **Rate limit handler** — queue 18 req/s ke Polymarket CLOB API
+- **Order recovery** — on startup, fetch + reconcile stale open orders (cancel if >24h old)
+- **Heartbeat monitor** — alert via Telegram jika scan tidak berjalan selama 2× interval
 
 ### 5. Paper Trading Mode (NEW)
 Simulasi trading tanpa uang nyata:
 - Paper bankroll terpisah ($1000 default)
-- Semua logic sama dengan live trading
+- **Slippage simulation** — buy at ask+slippage%, sell at bid-slippage%
+- **Fee simulation** — taker fee deducted from proceeds on resolution
 - Resolve otomatis saat market mendekati deadline
 - Reset kapan saja via Settings
 
@@ -185,6 +194,8 @@ Manajemen portofolio:
 - P&L chart interaktif (line/bar, 30/60/90 hari)
 - Tabel order history dengan filter
 - Export CSV
+- **Equity Curve chart** — total portfolio value over time (recorded each scan cycle)
+- **Drawdown chart** — peak-to-trough drawdown % with ATH, max drawdown, recovery days stats
 
 ### 11. Positions
 Posisi terbuka dengan:

@@ -1,10 +1,10 @@
 import { logger } from "../lib/db";
 import db from "../lib/db";
 import { portfolioState } from "../lib/state";
-import { getAutoTraderStats } from "./autoTrader";
+import { getAutoTraderStats, setEmergencyStop, isEmergencyStop } from "./autoTrader";
 import { getConfig, updateConfig, scanOpportunities } from "./strategy";
 import { getCachedMarkets } from "./polymarket";
-import { isClobConfigured, getUsdcBalance } from "./clob";
+import { isClobConfigured, getUsdcBalance, cancelAllOrders } from "./clob";
 
 const BASE = "https://api.telegram.org";
 
@@ -56,6 +56,8 @@ const COOLDOWNS_MS: Record<string, number> = {
   "/alert": 3_000,
   "/alerts": 5_000,
   "/delalert": 3_000,
+  "/emergencystop": 10_000,
+  "/resume": 10_000,
 };
 
 const lastUsed = new Map<string, number>();
@@ -989,10 +991,53 @@ async function handleDelAlert(chatId: string | number, args: string[]): Promise<
   await sendReply(chatId, `✅ <b>Alert <code>#${id}</code> deleted.</b>`);
 }
 
+async function handleEmergencyStop(chatId: string | number): Promise<void> {
+  if (!isClobConfigured()) {
+    setEmergencyStop(true);
+    await sendReply(chatId,
+      "🚨 <b>Emergency Stop Activated</b>\n\n" +
+      "Flag darurat diset. Auto-trading dinonaktifkan.\n" +
+      "<i>CLOB tidak terkonfigurasi — tidak ada order yang perlu dibatalkan.</i>\n\n" +
+      "Gunakan /resume untuk mengaktifkan kembali."
+    );
+    return;
+  }
+
+  await sendReply(chatId, "⏳ <b>Membatalkan semua open orders...</b>");
+
+  const { cancelled, errors } = await cancelAllOrders();
+  setEmergencyStop(true);
+
+  const config = getConfig();
+  updateConfig({ ...config, autoTradingEnabled: false });
+
+  logger.warn({ cancelled, errors }, "Emergency stop executed via Telegram");
+
+  await sendReply(chatId,
+    `🚨 <b>Emergency Stop Executed</b>\n\n` +
+    `✅ Orders cancelled: <b>${cancelled}</b>\n` +
+    (errors > 0 ? `⚠️ Errors: <b>${errors}</b>\n` : "") +
+    `🔴 Auto-trading: <b>DISABLED</b>\n\n` +
+    `Bot berhenti trading. Gunakan /resume untuk melanjutkan.`
+  );
+}
+
+async function handleResume(chatId: string | number): Promise<void> {
+  setEmergencyStop(false);
+  await sendReply(chatId,
+    `✅ <b>Emergency Stop Cleared</b>\n\n` +
+    `Flag darurat dihapus.\n` +
+    `Auto-trading masih <b>OFF</b> — aktifkan dari Settings → Auto-Trading.\n\n` +
+    `<i>Gunakan /status untuk melihat status bot.</i>`
+  );
+  logger.info("Emergency stop cleared via Telegram /resume");
+}
+
 async function handleHelp(chatId: string | number): Promise<void> {
+  const stopActive = isEmergencyStop();
   const lines = [
     `🤖 <b>PolyTrader Bot Commands</b>`,
-    "",
+    stopActive ? `\n🚨 <b>EMERGENCY STOP AKTIF</b> — gunakan /resume untuk melanjutkan\n` : "",
     `<b>Portfolio</b>`,
     `/balance — Balance and P&L summary`,
     `/positions — Open positions`,
@@ -1019,7 +1064,11 @@ async function handleHelp(chatId: string | number): Promise<void> {
     `/setcred &lt;type&gt; &lt;value&gt; — Save credential to DB`,
     `/resetdemo — Reset portfolio to demo data`,
     `/help — Show this message`,
-  ];
+    "",
+    `<b>🚨 Emergency</b>`,
+    `/emergencystop — Cancel ALL orders + disable trading`,
+    `/resume — Clear emergency stop flag`,
+  ].filter((l) => l !== "");
   await sendReply(chatId, lines.join("\n"));
 }
 
@@ -1123,6 +1172,8 @@ async function processMessage(message: TelegramMessage): Promise<void> {
     case "/alert":      await handleAlert(message.chat.id, args); break;
     case "/alerts":     await handleAlerts(message.chat.id); break;
     case "/delalert":   await handleDelAlert(message.chat.id, args); break;
+    case "/emergencystop": await handleEmergencyStop(message.chat.id); break;
+    case "/resume":        await handleResume(message.chat.id); break;
     case "/start":
     case "/help":       await handleHelp(message.chat.id); break;
     default:

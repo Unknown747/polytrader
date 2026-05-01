@@ -31,6 +31,17 @@ export interface StrategyConfig {
   paperTradingMode: boolean;
   // Paper bankroll for simulation
   paperBankroll: number;
+  // Paper trading slippage simulation (% of price, default 0.75)
+  paperSlippagePct: number;
+  // Paper trading taker fee simulation (%, default 1.0)
+  paperTakerFeePct: number;
+  // Volatility check: skip if price moved >N% since last scan
+  volatilityCheckEnabled: boolean;
+  volatilityThresholdPct: number;
+  // Cooldown after consecutive losses
+  cooldownAfterLossEnabled: boolean;
+  // Max risk per trade as % of actual balance
+  maxRiskPerTradePct: number;
 }
 
 // ─── Adaptive Capital ───────────────────────────────────────────────────────
@@ -174,6 +185,12 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   categoryFilter: "",
   paperTradingMode: false,
   paperBankroll: 1000,
+  paperSlippagePct: 0.75,
+  paperTakerFeePct: 1.0,
+  volatilityCheckEnabled: false,
+  volatilityThresholdPct: 5,
+  cooldownAfterLossEnabled: false,
+  maxRiskPerTradePct: 5,
 };
 
 function loadConfigFromDb(): StrategyConfig {

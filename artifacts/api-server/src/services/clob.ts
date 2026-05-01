@@ -438,4 +438,49 @@ export async function getOpenOrders(): Promise<OpenOrder[]> {
   }
 }
 
+export async function cancelOrder(orderId: string): Promise<{ success: boolean; error?: string }> {
+  const creds = getCreds();
+  if (!creds) return { success: false, error: "CLOB not configured" };
+
+  try {
+    const bodyStr = JSON.stringify({ orderID: orderId });
+    const path = "/order";
+    const headers = buildL2AuthHeaders(creds, "DELETE", path, bodyStr);
+    const res = await fetch(`${CLOB_URL}${path}`, {
+      method: "DELETE",
+      headers,
+      body: bodyStr,
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      return { success: false, error: text };
+    }
+    return { success: true };
+  } catch (err) {
+    logger.warn({ err, orderId }, "cancelOrder failed");
+    return { success: false, error: String(err) };
+  }
+}
+
+export async function cancelAllOrders(): Promise<{ cancelled: number; errors: number }> {
+  const openOrders = await getOpenOrders();
+  let cancelled = 0;
+  let errors = 0;
+
+  for (const order of openOrders) {
+    const result = await cancelOrder(order.id);
+    if (result.success) {
+      cancelled++;
+    } else {
+      errors++;
+      logger.warn({ orderId: order.id, error: result.error }, "Failed to cancel order during emergency stop");
+    }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+
+  logger.info({ cancelled, errors, total: openOrders.length }, "cancelAllOrders complete");
+  return { cancelled, errors };
+}
+
 export { getWalletAddress };

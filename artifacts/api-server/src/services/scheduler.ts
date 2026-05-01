@@ -11,15 +11,17 @@ import {
   notifyTakeProfitTierExecuted,
   notifyLowBalance,
   notifyAutoCompound,
+  notifyHeartbeatFailure,
 } from "./telegram";
 import { portfolioState } from "../lib/state";
-import { executeOpportunities } from "./autoTrader";
-import { isClobConfigured, getOpenOrders, getUsdcBalance } from "./clob";
+import { executeOpportunities, recordMarketPrice } from "./autoTrader";
+import { isClobConfigured, getOpenOrders, getUsdcBalance, cancelOrder } from "./clob";
 import { executePaperOpportunities, resolvePaperTradesNearResolution } from "./paperTrader";
 import db from "../lib/db";
 
 let scanTimer: ReturnType<typeof setInterval> | null = null;
 let dailyTimer: ReturnType<typeof setInterval> | null = null;
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let lastOpportunityIds = new Set<string>();
 let isScanning = false;
 let lastDailyReportDate = "";
@@ -29,6 +31,9 @@ let lastLowBalanceAlertAt = 0;
 const LOW_BALANCE_ALERT_COOLDOWN_MS = 4 * 60 * 60 * 1000; // 4 hours
 let lastAutoCompoundAt = 0;
 const AUTO_COMPOUND_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
+let heartbeatFailCount = 0;
+let lastSuccessfulScanAt = Date.now();
+let athEquity = 0;
 
 interface AlertRow {
   id: number;
@@ -381,6 +386,79 @@ async function checkMarketResolutions(): Promise<void> {
   }
 }
 
+function recordEquitySnapshot(balance: number, unrealizedPnl: number): void {
+  const totalValue = balance + unrealizedPnl;
+  const isAth = totalValue > athEquity;
+  if (isAth) athEquity = totalValue;
+
+  const drawdownPct = athEquity > 0
+    ? Math.round(((athEquity - totalValue) / athEquity) * 10000) / 100
+    : 0;
+
+  try {
+    db.prepare(
+      `INSERT INTO equity_snapshots (timestamp, balance, unrealized_pnl, total_value, drawdown_pct, is_ath)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(new Date().toISOString(), balance, unrealizedPnl, totalValue, drawdownPct, isAth ? 1 : 0);
+
+    const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    db.prepare("DELETE FROM equity_snapshots WHERE timestamp < ?").run(cutoff);
+  } catch (e) {
+    logger.warn({ err: e }, "recordEquitySnapshot failed");
+  }
+}
+
+async function checkHeartbeat(): Promise<void> {
+  const config = getConfig();
+  const maxSilenceMs = config.scanIntervalMinutes * 60 * 1000 * 3;
+  const silenceMs = Date.now() - lastSuccessfulScanAt;
+
+  if (silenceMs > maxSilenceMs) {
+    heartbeatFailCount++;
+    logger.warn({ silenceMs, failCount: heartbeatFailCount }, "Heartbeat: scan overdue");
+
+    if (heartbeatFailCount >= 2 && config.telegramAlertsEnabled) {
+      await notifyHeartbeatFailure({ failCount: heartbeatFailCount });
+    }
+  } else {
+    heartbeatFailCount = 0;
+  }
+}
+
+export async function recoverOpenOrders(): Promise<void> {
+  if (!isClobConfigured()) return;
+
+  try {
+    const openOrders = await getOpenOrders();
+    if (openOrders.length === 0) return;
+
+    const staleThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    let cancelled = 0;
+    let held = 0;
+
+    for (const order of openOrders) {
+      const isStale = order.createdAt < staleThreshold;
+      const hasNoFill = order.sizeMatched === 0;
+
+      if (isStale && hasNoFill) {
+        const result = await cancelOrder(order.id);
+        if (result.success) {
+          cancelled++;
+          logger.info({ orderId: order.id, createdAt: order.createdAt }, "Stale order cancelled on recovery");
+        }
+        await new Promise((r) => setTimeout(r, 300));
+      } else {
+        held++;
+        logger.info({ orderId: order.id, sizeMatched: order.sizeMatched }, "Order recovery: holding active order");
+      }
+    }
+
+    logger.info({ total: openOrders.length, cancelled, held }, "Order recovery complete");
+  } catch (e) {
+    logger.warn({ err: e }, "recoverOpenOrders failed");
+  }
+}
+
 async function reconcileOrphanedOrders(): Promise<void> {
   if (!isClobConfigured()) return;
 
@@ -433,8 +511,27 @@ async function runScan() {
       logger.info({ marketsUpdated: priceMap.size }, "Position prices updated from market data");
     }
 
+    if (markets.length > 0) {
+      for (const m of markets) {
+        recordMarketPrice(m.id, m.yesPrice);
+      }
+    }
+
     const config = getConfig();
     const opportunities = scanOpportunities(markets, config);
+
+    // Record equity snapshot
+    try {
+      let balance = 0;
+      if (isClobConfigured()) {
+        balance = await getUsdcBalance().catch(() => 0);
+      }
+      const summary = portfolioState.getSummary();
+      const unrealizedPnl = summary.totalPnl;
+      recordEquitySnapshot(balance, unrealizedPnl);
+    } catch { /* non-critical */ }
+
+    lastSuccessfulScanAt = Date.now();
 
     if (config.telegramAlertsEnabled || config.autoTradingEnabled) {
       const newOps = opportunities.filter(
@@ -480,7 +577,7 @@ async function runScan() {
     const cfg = getConfig();
     if (cfg.paperTradingMode) {
       await executePaperOpportunities(opportunities, cfg);
-      resolvePaperTradesNearResolution(priceMap);
+      resolvePaperTradesNearResolution(priceMap, cfg);
     }
 
     if (scanCycleCount % 4 === 0) {
@@ -513,6 +610,14 @@ export function startScheduler(runImmediately = true) {
     void checkDailyReport();
   }, 60 * 1000);
 
+  heartbeatTimer = setInterval(() => {
+    void checkHeartbeat();
+  }, 5 * 60 * 1000);
+
+  setTimeout(() => {
+    void recoverOpenOrders();
+  }, 8000);
+
   logger.info(
     { intervalMinutes: config.scanIntervalMinutes, runImmediately },
     "Scheduler started"
@@ -522,6 +627,7 @@ export function startScheduler(runImmediately = true) {
 export function stopScheduler() {
   if (scanTimer) { clearInterval(scanTimer); scanTimer = null; }
   if (dailyTimer) { clearInterval(dailyTimer); dailyTimer = null; }
+  if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
 }
 
 export function restartScheduler() {

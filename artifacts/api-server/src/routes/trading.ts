@@ -10,9 +10,10 @@ import {
 import { getCachedMarkets } from "../services/polymarket";
 import { scanOpportunities, getConfig, updateConfig, runBacktest, runBacktestComparison } from "../services/strategy";
 import { restartScheduler, triggerManualScan } from "../services/scheduler";
-import { getAutoTraderStats, getTradeHistory } from "../services/autoTrader";
+import { getAutoTraderStats, getTradeHistory, isEmergencyStop } from "../services/autoTrader";
 import { isClobConfigured, getUsdcBalance } from "../services/clob";
-import { getPaperPortfolio, resetPaperPortfolio, getPerformanceAnalytics } from "../services/paperTrader";
+import { getPaperPortfolio, resetPaperPortfolio, getPerformanceAnalytics, getEquityCurve } from "../services/paperTrader";
+import { getRateStats } from "../lib/rateLimit";
 import { logger } from "../lib/db";
 import db from "../lib/db";
 import { FAKE_MARKETS } from "./markets";
@@ -46,7 +47,12 @@ router.put("/strategy/config", (req, res) => {
   // (autoCompound, categoryFilter, paperTradingMode, paperBankroll)
   const raw = req.body as Record<string, unknown>;
   const extraFields: Record<string, unknown> = {};
-  const extraKeys = ["autoCompound", "categoryFilter", "paperTradingMode", "paperBankroll"];
+  const extraKeys = [
+    "autoCompound", "categoryFilter", "paperTradingMode", "paperBankroll",
+    "paperSlippagePct", "paperTakerFeePct",
+    "volatilityCheckEnabled", "volatilityThresholdPct",
+    "cooldownAfterLossEnabled", "maxRiskPerTradePct",
+  ];
   for (const key of extraKeys) {
     if (key in raw) extraFields[key] = raw[key];
   }
@@ -430,6 +436,63 @@ router.get("/prices/stream", (req, res) => {
     clearInterval(interval);
     clearInterval(heartbeat);
     logger.info("SSE client disconnected from /prices/stream");
+  });
+});
+
+router.get("/analytics/equity-curve", (_req, res) => {
+  const curve = getEquityCurve();
+
+  let ath = 0;
+  let maxDrawdownPct = 0;
+  let currentDrawdownPct = 0;
+  let athTimestamp = "";
+  let recoveryStart = "";
+  let currentRecoveryDays = 0;
+
+  for (const point of curve) {
+    if (point.totalValue > ath) {
+      ath = point.totalValue;
+      athTimestamp = point.timestamp;
+      recoveryStart = "";
+    } else if (recoveryStart === "" && ath > 0) {
+      recoveryStart = point.timestamp;
+    }
+    maxDrawdownPct = Math.max(maxDrawdownPct, point.drawdownPct);
+  }
+
+  if (curve.length > 0) {
+    currentDrawdownPct = curve[curve.length - 1].drawdownPct;
+    if (recoveryStart) {
+      const recoveryMs = Date.now() - new Date(recoveryStart).getTime();
+      currentRecoveryDays = Math.ceil(recoveryMs / (1000 * 60 * 60 * 24));
+    }
+  }
+
+  res.json({
+    curve,
+    summary: {
+      ath,
+      athTimestamp,
+      maxDrawdownPct: Math.round(maxDrawdownPct * 100) / 100,
+      currentDrawdownPct: Math.round(currentDrawdownPct * 100) / 100,
+      currentRecoveryDays,
+      totalDataPoints: curve.length,
+    },
+  });
+});
+
+router.get("/auto-trading/risk-status", (_req, res) => {
+  const config = getConfig();
+  const rateStats = getRateStats();
+  res.json({
+    emergencyStop: isEmergencyStop(),
+    volatilityCheckEnabled: config.volatilityCheckEnabled,
+    volatilityThresholdPct: config.volatilityThresholdPct,
+    cooldownAfterLossEnabled: config.cooldownAfterLossEnabled,
+    maxRiskPerTradePct: config.maxRiskPerTradePct,
+    minVolume24h: config.minVolume24h,
+    minLiquidity: config.minLiquidity,
+    rateLimit: rateStats,
   });
 });
 

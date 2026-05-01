@@ -164,6 +164,28 @@ db.exec(`
     threshold REAL NOT NULL,
     alerted_at TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS equity_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL,
+    balance REAL NOT NULL,
+    unrealized_pnl REAL NOT NULL DEFAULT 0,
+    total_value REAL NOT NULL,
+    drawdown_pct REAL NOT NULL DEFAULT 0,
+    is_ath INTEGER NOT NULL DEFAULT 0
+  );
+
+  CREATE TABLE IF NOT EXISTS market_price_history (
+    market_id TEXT NOT NULL,
+    price REAL NOT NULL,
+    recorded_at TEXT NOT NULL,
+    PRIMARY KEY (market_id, recorded_at)
+  );
+
+  CREATE TABLE IF NOT EXISTS trading_risk_state (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
 `);
 
 logger.info({ path: DB_PATH }, "SQLite database opened (poly.db)");

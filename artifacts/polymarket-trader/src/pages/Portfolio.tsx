@@ -9,16 +9,19 @@ import {
   Area,
   BarChart,
   Bar,
+  ComposedChart,
+  Line,
   PieChart,
   Pie,
   Cell,
   XAxis,
   YAxis,
   Tooltip,
+  Legend,
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
-import { TrendingUp, TrendingDown, Wifi, WifiOff, RefreshCw, Download } from "lucide-react";
+import { TrendingUp, TrendingDown, Wifi, WifiOff, RefreshCw, Download, Activity } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -86,6 +89,35 @@ function useLivePortfolio() {
   });
 }
 
+interface EquityCurvePoint {
+  timestamp: string;
+  balance: number;
+  unrealizedPnl: number;
+  totalValue: number;
+  drawdownPct: number;
+}
+
+interface EquityCurveSummary {
+  ath: number;
+  athTimestamp: string;
+  maxDrawdownPct: number;
+  currentDrawdownPct: number;
+  currentRecoveryDays: number;
+  totalDataPoints: number;
+}
+
+function useEquityCurve() {
+  return useQuery<{ curve: EquityCurvePoint[]; summary: EquityCurveSummary }>({
+    queryKey: ["equity-curve"],
+    queryFn: async () => {
+      const res = await fetch(`${import.meta.env.BASE_URL}api/analytics/equity-curve`);
+      if (!res.ok) throw new Error("Failed to fetch equity curve");
+      return res.json() as Promise<{ curve: EquityCurvePoint[]; summary: EquityCurveSummary }>;
+    },
+    refetchInterval: 60000,
+  });
+}
+
 function StatCard({
   label,
   value,
@@ -126,6 +158,8 @@ export default function Portfolio() {
     refetch: refetchLive,
     isFetching: liveFetching,
   } = useLivePortfolio();
+
+  const { data: equityData, isLoading: equityLoading } = useEquityCurve();
 
   const pnlPositive = (summary?.totalPnl ?? 0) >= 0;
   const livePnlPositive = (live?.summary.totalPnl ?? 0) >= 0;
@@ -429,6 +463,125 @@ export default function Portfolio() {
                 Auto-refreshes every 30 seconds · Data from Polymarket CLOB API
               </div>
             </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Equity Curve & Drawdown ── */}
+      <div className="rounded-xl border border-border bg-card">
+        <div className="flex items-center gap-3 p-4 border-b border-border">
+          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
+            <Activity className="h-4 w-4 text-primary" />
+          </div>
+          <div>
+            <div className="font-semibold text-sm">Equity Curve & Drawdown</div>
+            <div className="text-xs text-muted-foreground">Total portfolio value over time · Updates each scan cycle</div>
+          </div>
+        </div>
+
+        <div className="p-5 space-y-5">
+          {equityLoading ? (
+            <Skeleton className="h-48 rounded-lg w-full" />
+          ) : !equityData || equityData.curve.length < 2 ? (
+            <div className="text-sm text-muted-foreground text-center py-8">
+              Not enough data yet — equity snapshots are recorded on each scan cycle. Check back after a few scans.
+            </div>
+          ) : (
+            <>
+              {/* Summary stat row */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="rounded-lg bg-muted/40 p-3">
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">All-Time High</div>
+                  <div className="font-bold text-base text-foreground">${equityData.summary.ath.toFixed(2)}</div>
+                  <div className="text-[10px] text-muted-foreground truncate">
+                    {equityData.summary.athTimestamp ? new Date(equityData.summary.athTimestamp).toLocaleDateString() : "—"}
+                  </div>
+                </div>
+                <div className="rounded-lg bg-muted/40 p-3">
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Max Drawdown</div>
+                  <div className={cn("font-bold text-base", equityData.summary.maxDrawdownPct > 10 ? "text-no" : equityData.summary.maxDrawdownPct > 5 ? "text-yellow-400" : "text-yes")}>
+                    -{equityData.summary.maxDrawdownPct.toFixed(1)}%
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">peak-to-trough</div>
+                </div>
+                <div className="rounded-lg bg-muted/40 p-3">
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Current Drawdown</div>
+                  <div className={cn("font-bold text-base", equityData.summary.currentDrawdownPct > 10 ? "text-no" : equityData.summary.currentDrawdownPct > 5 ? "text-yellow-400" : "text-yes")}>
+                    {equityData.summary.currentDrawdownPct > 0 ? `-${equityData.summary.currentDrawdownPct.toFixed(1)}%` : "At ATH"}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">
+                    {equityData.summary.currentRecoveryDays > 0 ? `In drawdown ${equityData.summary.currentRecoveryDays}d` : "No drawdown"}
+                  </div>
+                </div>
+                <div className="rounded-lg bg-muted/40 p-3">
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Data Points</div>
+                  <div className="font-bold text-base text-foreground">{equityData.summary.totalDataPoints}</div>
+                  <div className="text-[10px] text-muted-foreground">snapshots recorded</div>
+                </div>
+              </div>
+
+              {/* Equity curve chart */}
+              <div>
+                <div className="text-xs font-medium text-muted-foreground mb-2">Portfolio Value over Time</div>
+                <ResponsiveContainer width="100%" height={180}>
+                  <ComposedChart
+                    data={equityData.curve.map((p) => ({
+                      ...p,
+                      label: new Date(p.timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+                    }))}
+                    margin={{ top: 4, right: 4, bottom: 0, left: 0 }}
+                  >
+                    <defs>
+                      <linearGradient id="equityGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="hsl(142 76% 46%)" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="hsl(142 76% 46%)" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: "hsl(215 20% 65%)" }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                    <YAxis tick={{ fontSize: 10, fill: "hsl(215 20% 65%)" }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}`} width={44} />
+                    <Tooltip
+                      contentStyle={{ background: "hsl(222 47% 9%)", border: "1px solid hsl(217 33% 17%)", borderRadius: "8px", fontSize: 11 }}
+                      formatter={(v: number, name: string) => [`$${v.toFixed(2)}`, name === "totalValue" ? "Total Value" : name === "balance" ? "USDC Balance" : "Unrealized PnL"]}
+                      labelFormatter={(l) => String(l)}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 10, color: "hsl(215 20% 65%)" }} />
+                    <Area type="monotone" dataKey="totalValue" name="totalValue" stroke="hsl(142 76% 46%)" strokeWidth={2} fill="url(#equityGrad)" dot={false} />
+                    <Line type="monotone" dataKey="balance" name="balance" stroke="hsl(217 91% 60%)" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Drawdown chart */}
+              <div>
+                <div className="text-xs font-medium text-muted-foreground mb-2">Drawdown (%)</div>
+                <ResponsiveContainer width="100%" height={120}>
+                  <AreaChart
+                    data={equityData.curve.map((p) => ({
+                      ...p,
+                      label: new Date(p.timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+                      drawdown: -p.drawdownPct,
+                    }))}
+                    margin={{ top: 4, right: 4, bottom: 0, left: 0 }}
+                  >
+                    <defs>
+                      <linearGradient id="drawdownGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="hsl(0 72% 51%)" stopOpacity={0.4} />
+                        <stop offset="95%" stopColor="hsl(0 72% 51%)" stopOpacity={0.05} />
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: "hsl(215 20% 65%)" }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                    <YAxis tick={{ fontSize: 10, fill: "hsl(215 20% 65%)" }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v.toFixed(0)}%`} width={36} />
+                    <ReferenceLine y={0} stroke="hsl(217 33% 25%)" />
+                    <Tooltip
+                      contentStyle={{ background: "hsl(222 47% 9%)", border: "1px solid hsl(217 33% 17%)", borderRadius: "8px", fontSize: 11 }}
+                      formatter={(v: number) => [`${Math.abs(v).toFixed(2)}%`, "Drawdown"]}
+                      labelFormatter={(l) => String(l)}
+                    />
+                    <Area type="monotone" dataKey="drawdown" stroke="hsl(0 72% 51%)" strokeWidth={1.5} fill="url(#drawdownGrad)" dot={false} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </>
           )}
         </div>
       </div>
