@@ -32,17 +32,23 @@ pnpm monorepo with the following artifacts and libraries:
 
 ## Backend Services
 
-- **`services/polymarket.ts`** — Polymarket Gamma API client with 5-min caching
-- **`services/strategy.ts`** — Strategy scanner with half-Kelly criterion, opportunity scoring
-- **`services/backtest.ts`** — Historical simulation engine (deterministic, parameterizable)
-- **`services/telegram.ts`** — Telegram bot notifications (opportunities, fills, daily P&L)
-- **`services/scheduler.ts`** — Background auto-scan cron (configurable interval)
+- **`services/polymarket.ts`** — Polymarket Gamma API client with 5-min caching, retry logic (3 attempts), multi-page fetching (up to 5 pages × 200 markets = 1000 markets), tokenId parsing from clobTokenIds
+- **`services/strategy.ts`** — Composite scoring strategy: edge (35%), expected return (20%), time urgency (20%), liquidity (15%), volume (10%). Configurable `minLiquidity` and `maxOpportunities`. Sorted by composite score, not just edge.
+- **`services/backtest.ts`** — Realistic simulation: win rate derived from entry price (not hardcoded), 30 unique market templates (no cycling), randomized trade timing, sorted output
+- **`services/telegram.ts`** — Retry logic (3 attempts + rate-limit handling), shows top 5 opportunities (not 3), real portfolio data in daily reports, skip if unconfigured
+- **`services/scheduler.ts`** — Immediate first scan on startup (5s delay), real portfolio summary in daily report, `triggerManualScan()` and `triggerDailyReport()` exposed for manual triggers
+
+## Shared State
+
+- **`lib/state.ts`** — In-memory `PortfolioState` class: holds orders, positions, PnL history. Orders placed via `/api/orders` automatically create/update positions and append PnL points. Portfolio summary is computed live from state.
 
 ## Data Mode
 
-All data is currently **fake/simulated** in the API server (`artifacts/api-server/src/routes/`). Markets, positions, orders, and portfolio data are all hardcoded for testing.
+- **Markets** — Live Polymarket Gamma API with multi-page fetch; falls back to 10 demo markets if unavailable
+- **Positions, Orders, Portfolio** — Dynamic in-memory state (resets on restart). Orders placed update positions and portfolio in real-time
+- **Strategy** — Live scan against real Gamma API markets; falls back to demo markets if unavailable
 
-To connect to Polymarket mainnet (Polygon), replace the fake data routes with calls to the [Polymarket CLOB API](https://docs.polymarket.com).
+To connect to Polymarket mainnet (Polygon) for live trading, set wallet secrets in Settings (see wallet connection instructions).
 
 ## Development
 

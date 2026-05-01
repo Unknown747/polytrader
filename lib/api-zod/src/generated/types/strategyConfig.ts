@@ -14,7 +14,9 @@ export interface StrategyConfig {
   minProbability: number;
   maxDaysToResolution: number;
   minVolume24h: number;
+  minLiquidity: number;
   scanIntervalMinutes: number;
   telegramAlertsEnabled: boolean;
   maxDailyTrades: number;
+  maxOpportunities: number;
 }

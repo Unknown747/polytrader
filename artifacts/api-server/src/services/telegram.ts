@@ -2,6 +2,8 @@ import { logger } from "../lib/logger";
 import type { Opportunity } from "./strategy";
 
 const BASE = "https://api.telegram.org";
+const SEND_RETRIES = 3;
+const RETRY_DELAY_MS = 1000;
 
 function botToken(): string | undefined {
   return process.env.TELEGRAM_BOT_TOKEN;
@@ -15,7 +17,11 @@ export function isTelegramConfigured(): boolean {
   return Boolean(botToken() && chatId());
 }
 
-async function sendMessage(text: string): Promise<boolean> {
+async function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function sendMessage(text: string, retries = SEND_RETRIES): Promise<boolean> {
   const token = botToken();
   const chat = chatId();
   if (!token || !chat) {
@@ -23,30 +29,44 @@ async function sendMessage(text: string): Promise<boolean> {
     return false;
   }
 
-  try {
-    const res = await fetch(`${BASE}/bot${token}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chat,
-        text,
-        parse_mode: "HTML",
-        disable_web_page_preview: true,
-      }),
-    });
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(`${BASE}/bot${token}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chat,
+          text,
+          parse_mode: "HTML",
+          disable_web_page_preview: true,
+        }),
+      });
 
-    if (!res.ok) {
+      if (res.ok) {
+        logger.info({ attempt }, "Telegram message sent");
+        return true;
+      }
+
       const err = await res.text();
-      logger.error({ status: res.status, err }, "Telegram sendMessage failed");
-      return false;
+      logger.warn({ status: res.status, err, attempt }, "Telegram sendMessage failed");
+
+      if (res.status === 429) {
+        const retryAfter = parseInt(res.headers.get("Retry-After") ?? "5", 10) * 1000;
+        await sleep(retryAfter);
+      } else if (res.status >= 400 && res.status < 500) {
+        return false;
+      }
+    } catch (e) {
+      logger.warn({ err: e, attempt }, "Telegram request error, retrying");
     }
 
-    logger.info("Telegram message sent");
-    return true;
-  } catch (e) {
-    logger.error({ err: e }, "Telegram request error");
-    return false;
+    if (attempt < retries) {
+      await sleep(RETRY_DELAY_MS * attempt);
+    }
   }
+
+  logger.error("Telegram: all retry attempts exhausted");
+  return false;
 }
 
 export async function sendTestMessage(): Promise<{ success: boolean; message: string }> {
@@ -63,16 +83,18 @@ export async function sendTestMessage(): Promise<{ success: boolean; message: st
 
   return {
     success: ok,
-    message: ok ? "Test message sent successfully!" : "Failed to send message. Check your Bot Token and Chat ID.",
+    message: ok
+      ? "Test message sent successfully!"
+      : "Failed to send message. Check your Bot Token and Chat ID.",
   };
 }
 
 export async function notifyOpportunities(opportunities: Opportunity[]): Promise<void> {
   if (!isTelegramConfigured() || opportunities.length === 0) return;
 
-  const top = opportunities.slice(0, 3);
+  const top = opportunities.slice(0, 5);
   const lines = [
-    `🎯 <b>${opportunities.length} new trading opportunit${opportunities.length === 1 ? "y" : "ies"} found!</b>`,
+    `🎯 <b>${opportunities.length} trading opportunit${opportunities.length === 1 ? "y" : "ies"} found!</b>`,
     "",
   ];
 
@@ -81,18 +103,24 @@ export async function notifyOpportunities(opportunities: Opportunity[]): Promise
     const price = (op.currentPrice * 100).toFixed(0);
     const edge = (op.edge * 100).toFixed(1);
     const ret = (op.expectedReturn * 100).toFixed(1);
+    const score = op.compositeScore !== undefined
+      ? ` | Score: ${(op.compositeScore * 100).toFixed(0)}/100`
+      : "";
     const days = op.daysToResolution < 1 ? "&lt;1 day" : `${op.daysToResolution.toFixed(0)}d`;
+    const liq = op.liquidity !== undefined && op.liquidity >= 1000
+      ? `$${(op.liquidity / 1000).toFixed(0)}k liq`
+      : "";
 
     lines.push(
       `<b>${op.question}</b>`,
-      `${side} @ ${price}¢ | Edge: +${edge}% | Return: +${ret}% | ${days}`,
-      `💰 Suggested: $${op.suggestedAmount.toFixed(2)}`,
+      `${side} @ ${price}¢ | Edge: +${edge}% | Return: +${ret}%${score}`,
+      `📅 ${days} | ${liq} | 💰 Suggested: $${op.suggestedAmount.toFixed(2)}`,
       ""
     );
   }
 
-  if (opportunities.length > 3) {
-    lines.push(`<i>...and ${opportunities.length - 3} more</i>`);
+  if (opportunities.length > 5) {
+    lines.push(`<i>...and ${opportunities.length - 5} more opportunities</i>`);
   }
 
   await sendMessage(lines.join("\n"));
@@ -104,6 +132,7 @@ export async function notifyOrderFilled(params: {
   price: number;
   amount: number;
 }): Promise<void> {
+  if (!isTelegramConfigured()) return;
   const { question, side, price, amount } = params;
   const sideStr = side === "YES" ? "✅ YES" : "❌ NO";
   await sendMessage(
@@ -116,14 +145,22 @@ export async function notifyDailyReport(params: {
   pnlPct: number;
   openPositions: number;
   totalValue: number;
+  totalTrades?: number;
+  winRate?: number;
 }): Promise<void> {
-  const { pnl, pnlPct, openPositions, totalValue } = params;
+  if (!isTelegramConfigured()) return;
+  const { pnl, pnlPct, openPositions, totalValue, totalTrades, winRate } = params;
   const sign = pnl >= 0 ? "+" : "";
   const emoji = pnl >= 0 ? "📈" : "📉";
-  await sendMessage(
-    `${emoji} <b>Daily P&L Report</b>\n\n` +
-    `P&L: <b>${sign}$${pnl.toFixed(2)} (${sign}${pnlPct.toFixed(2)}%)</b>\n` +
-    `Portfolio Value: $${totalValue.toFixed(2)}\n` +
-    `Open Positions: ${openPositions}`
-  );
+  const lines = [
+    `${emoji} <b>Daily P&L Report</b>`,
+    "",
+    `P&L: <b>${sign}$${pnl.toFixed(2)} (${sign}${pnlPct.toFixed(2)}%)</b>`,
+    `Portfolio Value: $${totalValue.toFixed(2)}`,
+    `Open Positions: ${openPositions}`,
+  ];
+  if (totalTrades !== undefined) lines.push(`Total Trades: ${totalTrades}`);
+  if (winRate !== undefined) lines.push(`Win Rate: ${winRate.toFixed(1)}%`);
+
+  await sendMessage(lines.join("\n"));
 }

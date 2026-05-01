@@ -194,6 +194,8 @@ export const GetOpportunitiesResponseItem = zod.object({
   riskLevel: zod.enum(["low", "medium", "high"]),
   daysToResolution: zod.number(),
   volume24h: zod.number(),
+  liquidity: zod.number(),
+  compositeScore: zod.number(),
   rationale: zod.string(),
   conditionId: zod.string().optional(),
 });
@@ -210,9 +212,11 @@ export const GetStrategyConfigResponse = zod.object({
   minProbability: zod.number(),
   maxDaysToResolution: zod.number(),
   minVolume24h: zod.number(),
+  minLiquidity: zod.number(),
   scanIntervalMinutes: zod.number(),
   telegramAlertsEnabled: zod.boolean(),
   maxDailyTrades: zod.number(),
+  maxOpportunities: zod.number(),
 });
 
 /**
@@ -226,9 +230,11 @@ export const UpdateStrategyConfigBody = zod.object({
   minProbability: zod.number(),
   maxDaysToResolution: zod.number(),
   minVolume24h: zod.number(),
+  minLiquidity: zod.number(),
   scanIntervalMinutes: zod.number(),
   telegramAlertsEnabled: zod.boolean(),
   maxDailyTrades: zod.number(),
+  maxOpportunities: zod.number(),
 });
 
 export const UpdateStrategyConfigResponse = zod.object({
@@ -239,9 +245,11 @@ export const UpdateStrategyConfigResponse = zod.object({
   minProbability: zod.number(),
   maxDaysToResolution: zod.number(),
   minVolume24h: zod.number(),
+  minLiquidity: zod.number(),
   scanIntervalMinutes: zod.number(),
   telegramAlertsEnabled: zod.boolean(),
   maxDailyTrades: zod.number(),
+  maxOpportunities: zod.number(),
 });
 
 /**

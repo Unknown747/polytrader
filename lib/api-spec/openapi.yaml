@@ -495,6 +495,10 @@ components:
           type: number
         volume24h:
           type: number
+        liquidity:
+          type: number
+        compositeScore:
+          type: number
         rationale:
           type: string
         conditionId:
@@ -513,6 +517,8 @@ components:
         - riskLevel
         - daysToResolution
         - volume24h
+        - liquidity
+        - compositeScore
         - rationale
 
     StrategyConfig:
@@ -532,11 +538,15 @@ components:
           type: integer
         minVolume24h:
           type: number
+        minLiquidity:
+          type: number
         scanIntervalMinutes:
           type: integer
         telegramAlertsEnabled:
           type: boolean
         maxDailyTrades:
+          type: integer
+        maxOpportunities:
           type: integer
       required:
         - autoTradingEnabled
@@ -546,9 +556,11 @@ components:
         - minProbability
         - maxDaysToResolution
         - minVolume24h
+        - minLiquidity
         - scanIntervalMinutes
         - telegramAlertsEnabled
         - maxDailyTrades
+        - maxOpportunities
 
     BacktestRequest:
       type: object

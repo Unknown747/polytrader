@@ -38,11 +38,20 @@ function OpportunityCard({
     riskLevel: "low" | "medium" | "high";
     daysToResolution: number;
     volume24h: number;
+    liquidity: number;
+    compositeScore: number;
     rationale: string;
   };
 }) {
   const RiskIcon = RISK_ICON[op.riskLevel];
   const isYes = op.recommendedSide === "YES";
+  const scorePct = Math.round(op.compositeScore * 100);
+  const scoreColor = scorePct >= 70 ? "text-yes" : scorePct >= 45 ? "text-yellow-400" : "text-no";
+  const liqFormatted = op.liquidity >= 1_000_000
+    ? `$${(op.liquidity / 1_000_000).toFixed(1)}M`
+    : op.liquidity >= 1000
+    ? `$${(op.liquidity / 1000).toFixed(0)}k`
+    : `$${op.liquidity}`;
 
   return (
     <div className="rounded-xl border border-border bg-card p-5 flex flex-col gap-4 hover:border-primary/30 transition-colors">
@@ -55,14 +64,19 @@ function OpportunityCard({
             {op.category}
           </span>
         </div>
-        <span
-          className={cn(
-            "shrink-0 inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold",
-            isYes ? "bg-yes/10 text-yes" : "bg-no/10 text-no"
-          )}
-        >
-          {op.recommendedSide}
-        </span>
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          <span
+            className={cn(
+              "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold",
+              isYes ? "bg-yes/10 text-yes" : "bg-no/10 text-no"
+            )}
+          >
+            {op.recommendedSide}
+          </span>
+          <span className={cn("text-xs font-semibold", scoreColor)}>
+            Score {scorePct}/100
+          </span>
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-3">
@@ -71,6 +85,7 @@ function OpportunityCard({
           <div className="text-base font-bold text-foreground">
             {(op.currentPrice * 100).toFixed(0)}¢
           </div>
+          <div className="text-[10px] text-muted-foreground">FV {(op.estimatedFairValue * 100).toFixed(0)}¢</div>
         </div>
         <div className="bg-background/50 rounded-lg p-3 text-center">
           <div className="text-xs text-muted-foreground mb-1">Edge</div>
@@ -89,11 +104,14 @@ function OpportunityCard({
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <div className="flex items-center gap-1">
           <Clock className="h-3 w-3" />
-          {op.daysToResolution < 1 ? "&lt;1 day" : `${op.daysToResolution.toFixed(1)}d to resolve`}
+          {op.daysToResolution < 1 ? "<1 day" : `${op.daysToResolution.toFixed(1)}d to resolve`}
         </div>
-        <div className="flex items-center gap-1">
-          <TrendingUp className="h-3 w-3" />
-          Vol 24h: ${op.volume24h.toLocaleString()}
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1">
+            <TrendingUp className="h-3 w-3" />
+            Vol: ${op.volume24h >= 1000 ? `${(op.volume24h / 1000).toFixed(0)}k` : op.volume24h}
+          </div>
+          <div>Liq: {liqFormatted}</div>
         </div>
       </div>
 

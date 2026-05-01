@@ -22,6 +22,8 @@ export interface Opportunity {
   riskLevel: OpportunityRiskLevel;
   daysToResolution: number;
   volume24h: number;
+  liquidity: number;
+  compositeScore: number;
   rationale: string;
   conditionId?: string;
 }

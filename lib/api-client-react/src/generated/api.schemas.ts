@@ -162,6 +162,8 @@ export interface Opportunity {
   riskLevel: OpportunityRiskLevel;
   daysToResolution: number;
   volume24h: number;
+  liquidity: number;
+  compositeScore: number;
   rationale: string;
   conditionId?: string;
 }
@@ -174,9 +176,11 @@ export interface StrategyConfig {
   minProbability: number;
   maxDaysToResolution: number;
   minVolume24h: number;
+  minLiquidity: number;
   scanIntervalMinutes: number;
   telegramAlertsEnabled: boolean;
   maxDailyTrades: number;
+  maxOpportunities: number;
 }
 
 export interface BacktestRequest {

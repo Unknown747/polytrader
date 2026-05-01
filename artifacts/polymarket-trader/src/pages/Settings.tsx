@@ -19,9 +19,11 @@ type StrategyConfig = {
   minProbability: number;
   maxDaysToResolution: number;
   minVolume24h: number;
+  minLiquidity: number;
   scanIntervalMinutes: number;
   telegramAlertsEnabled: boolean;
   maxDailyTrades: number;
+  maxOpportunities: number;
 };
 
 function SectionTitle({ icon: Icon, title, description }: {
@@ -273,12 +275,20 @@ export default function Settings() {
                 <Input type="number" value={form.minVolume24h} onChange={(e) => setField("minVolume24h", e.target.value)} min={0} />
               </div>
               <div className="space-y-1.5">
+                <Label className="text-xs">Min liquidity ($)</Label>
+                <Input type="number" value={form.minLiquidity} onChange={(e) => setField("minLiquidity", e.target.value)} min={0} />
+              </div>
+              <div className="space-y-1.5">
                 <Label className="text-xs">Scan interval (minutes)</Label>
                 <Input type="number" value={form.scanIntervalMinutes} onChange={(e) => setField("scanIntervalMinutes", e.target.value)} min={1} max={60} />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Max daily trades</Label>
                 <Input type="number" value={form.maxDailyTrades} onChange={(e) => setField("maxDailyTrades", e.target.value)} min={1} max={50} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Max opportunities shown</Label>
+                <Input type="number" value={form.maxOpportunities} onChange={(e) => setField("maxOpportunities", e.target.value)} min={5} max={100} />
               </div>
             </div>
 

@@ -2,6 +2,7 @@ import { logger } from "../lib/logger";
 import { getCachedMarkets, invalidateCache } from "./polymarket";
 import { scanOpportunities, getConfig } from "./strategy";
 import { notifyOpportunities, notifyDailyReport } from "./telegram";
+import { portfolioState } from "../lib/state";
 
 let scanTimer: ReturnType<typeof setInterval> | null = null;
 let dailyTimer: ReturnType<typeof setInterval> | null = null;
@@ -42,22 +43,31 @@ async function runDailyReport() {
   if (!config.telegramAlertsEnabled) return;
 
   try {
+    const summary = portfolioState.getSummary();
     await notifyDailyReport({
-      pnl: 0,
-      pnlPct: 0,
-      openPositions: 0,
-      totalValue: config.bankroll,
+      pnl: summary.totalPnl,
+      pnlPct: summary.totalPnlPercent,
+      openPositions: summary.openPositions,
+      totalValue: summary.totalValue,
+      totalTrades: summary.totalTrades,
+      winRate: summary.winRate,
     });
   } catch (e) {
     logger.error({ err: e }, "Daily report failed");
   }
 }
 
-export function startScheduler() {
+export function startScheduler(runImmediately = true) {
   stopScheduler();
 
   const config = getConfig();
   const intervalMs = config.scanIntervalMinutes * 60 * 1000;
+
+  if (runImmediately) {
+    setTimeout(() => {
+      void runScan();
+    }, 5000);
+  }
 
   scanTimer = setInterval(() => {
     void runScan();
@@ -68,7 +78,10 @@ export function startScheduler() {
     void runDailyReport();
   }, dailyMs);
 
-  logger.info({ intervalMinutes: config.scanIntervalMinutes }, "Scheduler started");
+  logger.info(
+    { intervalMinutes: config.scanIntervalMinutes, runImmediately },
+    "Scheduler started"
+  );
 }
 
 export function stopScheduler() {
@@ -78,5 +91,14 @@ export function stopScheduler() {
 
 export function restartScheduler() {
   stopScheduler();
-  startScheduler();
+  startScheduler(false);
+  logger.info("Scheduler restarted due to config change");
+}
+
+export function triggerManualScan(): void {
+  void runScan();
+}
+
+export function triggerDailyReport(): void {
+  void runDailyReport();
 }
