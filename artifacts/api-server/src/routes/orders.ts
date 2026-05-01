@@ -9,7 +9,20 @@ import { FAKE_MARKETS } from "./markets";
 
 const router: IRouter = Router();
 
-let FAKE_ORDERS = [
+type OrderEntry = {
+  id: string;
+  marketId: string;
+  marketQuestion: string;
+  side: "YES" | "NO";
+  type: "BUY" | "SELL";
+  price: number;
+  amount: number;
+  shares: number;
+  status: "open" | "filled" | "cancelled" | "partial";
+  createdAt: Date;
+};
+
+let FAKE_ORDERS: OrderEntry[] = [
   {
     id: "ord-001",
     marketId: "mkt-001",
