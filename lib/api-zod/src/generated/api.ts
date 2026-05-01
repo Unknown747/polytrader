@@ -315,3 +315,31 @@ export const TestTelegramResponse = zod.object({
   success: zod.boolean(),
   message: zod.string(),
 });
+
+/**
+ * @summary Get YES price correlation matrix for watched markets
+ */
+export const getWatchlistCorrelationQueryDaysDefault = 30;
+export const getWatchlistCorrelationQueryDaysMin = 7;
+export const getWatchlistCorrelationQueryDaysMax = 90;
+
+export const GetWatchlistCorrelationQueryParams = zod.object({
+  days: zod.coerce
+    .number()
+    .min(getWatchlistCorrelationQueryDaysMin)
+    .max(getWatchlistCorrelationQueryDaysMax)
+    .default(getWatchlistCorrelationQueryDaysDefault),
+});
+
+export const GetWatchlistCorrelationResponse = zod.object({
+  markets: zod.array(
+    zod.object({
+      marketId: zod.string(),
+      question: zod.string(),
+      yesPrice: zod.number(),
+      category: zod.string(),
+    }),
+  ),
+  matrix: zod.array(zod.array(zod.number())),
+  days: zod.number(),
+});

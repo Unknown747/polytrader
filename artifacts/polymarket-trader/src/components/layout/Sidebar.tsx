@@ -9,6 +9,7 @@ import {
   Zap,
   FlaskConical,
   Settings2,
+  Network,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useGetWalletStatus } from "@workspace/api-client-react";
@@ -21,6 +22,7 @@ const NAV_ITEMS = [
   { href: "/portfolio", label: "Portfolio", icon: BarChart3 },
   { href: "/strategy", label: "Strategy", icon: Zap },
   { href: "/backtest", label: "Backtest", icon: FlaskConical },
+  { href: "/correlation", label: "Correlation", icon: Network },
   { href: "/settings", label: "Settings", icon: Settings2 },
 ];
 

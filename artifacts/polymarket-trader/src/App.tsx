@@ -11,6 +11,7 @@ import Orders from "@/pages/Orders";
 import Portfolio from "@/pages/Portfolio";
 import Strategy from "@/pages/Strategy";
 import Backtest from "@/pages/Backtest";
+import Correlation from "@/pages/Correlation";
 import Settings from "@/pages/Settings";
 import NotFound from "@/pages/not-found";
 
@@ -35,6 +36,7 @@ function Router() {
         <Route path="/portfolio" component={Portfolio} />
         <Route path="/strategy" component={Strategy} />
         <Route path="/backtest" component={Backtest} />
+        <Route path="/correlation" component={Correlation} />
         <Route path="/settings" component={Settings} />
         <Route component={NotFound} />
       </Switch>

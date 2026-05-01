@@ -19,6 +19,8 @@ import type {
 import type {
   BacktestRequest,
   BacktestResult,
+  CorrelationMatrix,
+  GetWatchlistCorrelationParams,
   HealthStatus,
   ListMarketsParams,
   Market,
@@ -1316,3 +1318,103 @@ export const useTestTelegram = <
 > => {
   return useMutation(getTestTelegramMutationOptions(options));
 };
+
+/**
+ * @summary Get YES price correlation matrix for watched markets
+ */
+export const getGetWatchlistCorrelationUrl = (
+  params?: GetWatchlistCorrelationParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/watchlist/correlation?${stringifiedParams}`
+    : `/api/watchlist/correlation`;
+};
+
+export const getWatchlistCorrelation = async (
+  params?: GetWatchlistCorrelationParams,
+  options?: RequestInit,
+): Promise<CorrelationMatrix> => {
+  return customFetch<CorrelationMatrix>(getGetWatchlistCorrelationUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetWatchlistCorrelationQueryKey = (
+  params?: GetWatchlistCorrelationParams,
+) => {
+  return [`/api/watchlist/correlation`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetWatchlistCorrelationQueryOptions = <
+  TData = Awaited<ReturnType<typeof getWatchlistCorrelation>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetWatchlistCorrelationParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getWatchlistCorrelation>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetWatchlistCorrelationQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getWatchlistCorrelation>>
+  > = ({ signal }) =>
+    getWatchlistCorrelation(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getWatchlistCorrelation>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetWatchlistCorrelationQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getWatchlistCorrelation>>
+>;
+export type GetWatchlistCorrelationQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get YES price correlation matrix for watched markets
+ */
+
+export function useGetWatchlistCorrelation<
+  TData = Awaited<ReturnType<typeof getWatchlistCorrelation>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetWatchlistCorrelationParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getWatchlistCorrelation>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetWatchlistCorrelationQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}

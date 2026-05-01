@@ -256,6 +256,19 @@ export interface TelegramTestResult {
   message: string;
 }
 
+export interface CorrelationMarket {
+  marketId: string;
+  question: string;
+  yesPrice: number;
+  category: string;
+}
+
+export interface CorrelationMatrix {
+  markets: CorrelationMarket[];
+  matrix: number[][];
+  days: number;
+}
+
 export type ListMarketsParams = {
   category?: string;
   status?: ListMarketsStatus;
@@ -270,3 +283,11 @@ export const ListMarketsStatus = {
   resolved: "resolved",
   all: "all",
 } as const;
+
+export type GetWatchlistCorrelationParams = {
+  /**
+   * @minimum 7
+   * @maximum 90
+   */
+  days?: number;
+};

@@ -277,6 +277,27 @@ paths:
               schema:
                 $ref: "#/components/schemas/TelegramTestResult"
 
+  /watchlist/correlation:
+    get:
+      operationId: getWatchlistCorrelation
+      tags: [markets]
+      summary: Get YES price correlation matrix for watched markets
+      parameters:
+        - name: days
+          in: query
+          schema:
+            type: integer
+            minimum: 7
+            maximum: 90
+            default: 30
+      responses:
+        "200":
+          description: Pairwise correlation matrix for watchlisted markets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CorrelationMatrix"
+
 components:
   schemas:
     HealthStatus:
@@ -689,3 +710,33 @@ components:
         message:
           type: string
       required: [success, message]
+
+    CorrelationMarket:
+      type: object
+      properties:
+        marketId:
+          type: string
+        question:
+          type: string
+        yesPrice:
+          type: number
+        category:
+          type: string
+      required: [marketId, question, yesPrice, category]
+
+    CorrelationMatrix:
+      type: object
+      properties:
+        markets:
+          type: array
+          items:
+            $ref: "#/components/schemas/CorrelationMarket"
+        matrix:
+          type: array
+          items:
+            type: array
+            items:
+              type: number
+        days:
+          type: integer
+      required: [markets, matrix, days]

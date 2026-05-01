@@ -13,6 +13,7 @@ import autoTraderRouter from "./autoTrader";
 import demoRouter from "./demo";
 import watchlistRouter from "./watchlist";
 import alertsRouter from "./alerts";
+import correlationRouter from "./correlation";
 
 const router: IRouter = Router();
 
@@ -28,6 +29,7 @@ router.use(walletRouter);
 router.use(telegramRouter);
 router.use(autoTraderRouter);
 router.use(demoRouter);
+router.use(correlationRouter);
 router.use(watchlistRouter);
 router.use(alertsRouter);
 
