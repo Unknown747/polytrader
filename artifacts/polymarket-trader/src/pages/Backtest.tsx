@@ -156,28 +156,38 @@ function CompareStatRow({
   );
 }
 
-function SmallCapitalPanel({ bankroll }: { bankroll: number }) {
+function SmallCapitalPanel({ bankroll, maxPosPct }: { bankroll: number; maxPosPct: number }) {
   const minOrder = 1;
-  const maxPosPct = 5;
   const perTrade = (bankroll * maxPosPct) / 100;
   const isTooSmall = perTrade < minOrder;
-  const isTight = perTrade < 3;
-  const spreadCostPct = perTrade < 5 ? 2.5 : perTrade < 20 ? 1.5 : 0.8;
-  const feeAndSpread = (CLOB_TAKER_FEE_PCT + spreadCostPct).toFixed(1);
-  const breakEvenEdge = (parseFloat(feeAndSpread)).toFixed(1);
+  // "Dead zone" bankroll = when kelly sizing falls below min order
+  const deadZoneBankroll = Math.ceil((minOrder / (maxPosPct / 100)));
+  const lossesToDead = perTrade > 0 ? Math.max(0, Math.floor((bankroll - deadZoneBankroll) / perTrade)) : 0;
+
+  const isCritical = bankroll <= 20; // $20 or below — special warning
+  const isTight = perTrade < 3 && !isTooSmall;
   const feasible = !isTooSmall;
 
+  const spreadCostPct = perTrade < 2 ? 2.5 : perTrade < 5 ? 2.0 : perTrade < 20 ? 1.5 : 0.8;
+  const feePerWinTrade = perTrade > 0 ? (perTrade / 0.85) * 0.01 : 0; // ~1% of shares value
+  const feeAndSpread = (CLOB_TAKER_FEE_PCT + spreadCostPct).toFixed(1);
+  const totalFeesAt100Trades = feePerWinTrade * 100 * 0.8; // assume 80% win rate
+
   const statusColor = isTooSmall
+    ? "border-no/30 bg-no/5"
+    : isCritical
     ? "border-no/30 bg-no/5"
     : isTight
     ? "border-yellow-500/30 bg-yellow-500/5"
     : "border-yes/30 bg-yes/5";
-  const statusIcon = isTooSmall ? XCircle : isTight ? AlertTriangle : CheckCircle2;
-  const statusIconColor = isTooSmall ? "text-no" : isTight ? "text-yellow-400" : "text-yes";
-  const statusText = isTooSmall
-    ? "Terlalu kecil — per trade di bawah minimum $1 Polymarket"
+  const statusIconColor = isTooSmall || isCritical ? "text-no" : isTight ? "text-yellow-400" : "text-yes";
+  const statusEmoji = isTooSmall ? "❌" : isCritical ? "🔴" : isTight ? "⚠️" : "✅";
+  const statusLabel = isTooSmall
+    ? "Tidak bisa — per trade di bawah minimum $1"
+    : isCritical
+    ? "Sangat berisiko — bot bisa berhenti setelah beberapa loss"
     : isTight
-    ? "Bisa dipakai, tapi spread+fee menggerus profit lebih besar"
+    ? "Bisa dipakai, tapi butuh hati-hati"
     : "Layak digunakan untuk bot trading";
 
   return (
@@ -188,95 +198,148 @@ function SmallCapitalPanel({ bankroll }: { bankroll: number }) {
         </div>
         <div>
           <h2 className="text-sm font-semibold text-foreground">
-            Analisis Modal ${bankroll} — Apakah Layak?
+            Analisis Modal ${bankroll} — Apakah Cukup?
           </h2>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Dihitung otomatis dari bankroll dan max position {maxPosPct}%
+            Dihitung dari bankroll ${bankroll} dengan max position {maxPosPct}%
           </p>
+        </div>
+        <div className={cn("ml-auto px-2.5 py-1 rounded-full text-xs font-bold border", statusIconColor,
+          isTooSmall || isCritical ? "border-no/30 bg-no/10" : isTight ? "border-yellow-500/30 bg-yellow-500/10" : "border-yes/30 bg-yes/10"
+        )}>
+          {statusEmoji} {isTooSmall ? "Tidak Bisa" : isCritical ? "Berisiko Tinggi" : isTight ? "Mepet" : "Layak"}
         </div>
       </div>
 
+      {/* Metric grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
         <div className="rounded-lg bg-background/60 p-3">
           <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Per Trade</div>
-          <div className={cn("font-bold text-lg", isTooSmall ? "text-no" : "text-foreground")}>
+          <div className={cn("font-bold text-lg", isTooSmall ? "text-no" : isCritical ? "text-yellow-400" : "text-foreground")}>
             ${perTrade.toFixed(2)}
           </div>
           <div className="text-[10px] text-muted-foreground">Min Polymarket: $1</div>
         </div>
         <div className="rounded-lg bg-background/60 p-3">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Fee + Spread</div>
-          <div className="font-bold text-lg text-no">{feeAndSpread}%</div>
-          <div className="text-[10px] text-muted-foreground">dari setiap trade</div>
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Fee 100 trade</div>
+          <div className="font-bold text-lg text-yes">${totalFeesAt100Trades.toFixed(2)}</div>
+          <div className="text-[10px] text-muted-foreground">Fee BUKAN masalah utama</div>
         </div>
         <div className="rounded-lg bg-background/60 p-3">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Min Edge Perlu</div>
-          <div className="font-bold text-lg text-yellow-400">{breakEvenEdge}%+</div>
-          <div className="text-[10px] text-muted-foreground">untuk BEP per trade</div>
-        </div>
-        <div className="rounded-lg bg-background/60 p-3">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Status</div>
-          <div className={cn("font-bold text-sm mt-1", statusIconColor)}>
-            {isTooSmall ? "❌ Tidak bisa" : isTight ? "⚠️ Mepet" : "✅ Bisa"}
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Bot Berhenti Saat</div>
+          <div className={cn("font-bold text-lg", isTooSmall ? "text-no" : "text-no")}>
+            ${deadZoneBankroll}
           </div>
+          <div className="text-[10px] text-muted-foreground">bankroll &lt; min order</div>
+        </div>
+        <div className="rounded-lg bg-background/60 p-3">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Loss Sebelum Stop</div>
+          <div className={cn("font-bold text-lg", lossesToDead <= 3 ? "text-no" : lossesToDead <= 8 ? "text-yellow-400" : "text-yes")}>
+            {isTooSmall ? "0" : lossesToDead} loss
+          </div>
+          <div className="text-[10px] text-muted-foreground">berturut-turut (worst case)</div>
         </div>
       </div>
 
-      <div className={cn("flex items-start gap-2 rounded-lg p-3", statusColor)}>
-        {(() => { const Icon = statusIcon; return <Icon className={cn("h-4 w-4 shrink-0 mt-0.5", statusIconColor)} />; })()}
-        <div className="text-xs leading-relaxed">
-          <span className="font-semibold text-foreground">{statusText}</span>
-          {feasible && (
-            <ul className="mt-2 space-y-1 text-muted-foreground">
-              {isTight && (
-                <>
-                  <li>• Spread ~{spreadCostPct}% di market kecil terasa berat untuk order ${perTrade.toFixed(2)}</li>
-                  <li>• Strategi bot butuh edge ≥{breakEvenEdge}% hanya untuk impas — sudah di-set {">"}3% tapi mepet</li>
-                  <li>• <strong className="text-foreground">Solusi:</strong> naikkan bankroll ke $200+ atau pilih market likuid saja</li>
-                </>
-              )}
-              {!isTight && (
-                <>
-                  <li>• Per trade ${perTrade.toFixed(2)} cukup di atas minimum $1 Polymarket</li>
-                  <li>• Pastikan pilih market dengan likuiditas {">"}$10,000 untuk spread yang kecil</li>
-                  <li>• Bot sudah bisa dijalankan dengan modal ini</li>
-                </>
-              )}
-            </ul>
-          )}
-          {!feasible && (
-            <ul className="mt-2 space-y-1 text-muted-foreground">
-              <li>• Dengan bankroll ${bankroll} dan max position {maxPosPct}% = ${perTrade.toFixed(2)}/trade</li>
-              <li>• Naikkan bankroll ke min <strong className="text-foreground">${Math.ceil(minOrder * 100 / maxPosPct)}</strong> agar bisa trade</li>
-              <li>• Atau naikkan Max Position Size {">"} {Math.ceil(minOrder * 100 / bankroll)}% di Strategy Config</li>
-            </ul>
-          )}
+      {/* Main warning/info block */}
+      <div className={cn("rounded-lg p-3.5 text-xs leading-relaxed space-y-2", statusColor)}>
+        <div className={cn("font-semibold flex items-center gap-1.5", statusIconColor)}>
+          {isTooSmall || isCritical
+            ? <XCircle className="h-4 w-4 shrink-0" />
+            : isTight
+            ? <AlertTriangle className="h-4 w-4 shrink-0" />
+            : <CheckCircle2 className="h-4 w-4 shrink-0" />}
+          {statusLabel}
         </div>
+
+        {isCritical && !isTooSmall && (
+          <div className="space-y-1.5 text-muted-foreground pt-1 border-t border-border/40">
+            <p className="text-foreground font-medium">❓ Apakah fee akan menguras modal $20?</p>
+            <p>
+              <span className="text-yes font-semibold">Fee TIDAK</span> akan menguras modal. Dengan per trade ${perTrade.toFixed(2)},
+              fee per trade hanya <span className="text-yes font-semibold">~${feePerWinTrade.toFixed(3)}</span>. Bahkan 100 trade pun fee total cuma ~${totalFeesAt100Trades.toFixed(2)}.
+            </p>
+            <p className="text-foreground font-medium mt-2">⚠️ Yang berbahaya adalah LOSING STREAK:</p>
+            <div className="grid grid-cols-1 gap-1 mt-1">
+              {[
+                { loss: 1, eq: bankroll - perTrade * 1, note: "Normal" },
+                { loss: 3, eq: bankroll - perTrade * 3, note: "Mulai kritis" },
+                { loss: lossesToDead + 1, eq: bankroll - perTrade * (lossesToDead + 1), note: "Bot tidak bisa trade" },
+              ].filter((r) => r.eq >= 0).map((row) => (
+                <div key={row.loss} className="flex items-center justify-between bg-background/40 rounded px-2 py-1">
+                  <span>{row.loss}x loss berturut</span>
+                  <span className={cn("font-semibold", row.eq < deadZoneBankroll ? "text-no" : row.eq < bankroll * 0.85 ? "text-yellow-400" : "text-foreground")}>
+                    Sisa ${Math.max(0, row.eq).toFixed(2)}
+                    {row.eq < deadZoneBankroll && <span className="ml-1 text-no font-bold">← BOT STOP</span>}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p className="mt-2">
+              <span className="text-foreground font-semibold">Kesimpulan:</span> Dengan $20, bot bisa berhenti permanen hanya setelah{" "}
+              <span className="text-no font-semibold">{lossesToDead} loss berturut</span>. Win rate bot ~75-85% — kemungkinan ini terjadi kecil, tapi nyata.
+            </p>
+            <p>
+              <span className="text-foreground font-semibold">Solusi terbaik:</span> Naikkan ke minimal{" "}
+              <span className="text-yes font-semibold">$50</span> agar punya buffer lebih aman, atau naikkan Max Position Size ke 10% (tapi risikonya lebih besar).
+            </p>
+          </div>
+        )}
+
+        {isTooSmall && (
+          <div className="space-y-1 text-muted-foreground pt-1 border-t border-border/40">
+            <li>Bankroll ${bankroll} × {maxPosPct}% = ${perTrade.toFixed(2)} — di bawah minimum $1 Polymarket</li>
+            <li>Naikkan bankroll ke minimal <span className="text-foreground font-semibold">${deadZoneBankroll}</span></li>
+            <li>Atau naikkan Max Position Size ke {">"}{Math.ceil(100 / bankroll)}% di Strategy Config</li>
+          </div>
+        )}
+
+        {!isCritical && !isTooSmall && (
+          <ul className="space-y-1 text-muted-foreground pt-1 border-t border-border/40">
+            {isTight ? (
+              <>
+                <li>• Spread ~{spreadCostPct}% di market kecil terasa berat untuk order ${perTrade.toFixed(2)}</li>
+                <li>• Bot butuh edge ≥{feeAndSpread}% per trade untuk impas — strategi sudah set {">"}3%</li>
+                <li>• <strong className="text-foreground">Saran:</strong> pilih market dengan likuiditas {">"}$50,000 saja</li>
+              </>
+            ) : (
+              <>
+                <li>• Per trade ${perTrade.toFixed(2)} cukup nyaman di atas minimum $1</li>
+                <li>• Fee 100 trade hanya ~${totalFeesAt100Trades.toFixed(2)} — tidak signifikan</li>
+                <li>• Bot bisa berhenti jika sisa bankroll turun ke ${deadZoneBankroll} ({lossesToDead} loss berturut)</li>
+              </>
+            )}
+          </ul>
+        )}
       </div>
 
-      {feasible && (
-        <div className="mt-3 rounded-lg bg-background/60 border border-border p-3 text-[11px] text-muted-foreground">
-          <span className="font-medium text-foreground flex items-center gap-1 mb-1.5">
-            <Info className="h-3 w-3 text-primary" /> Rekomendasi modal berdasarkan ukuran
-          </span>
-          <div className="grid grid-cols-3 gap-2 mt-2">
-            {[
-              { label: "Starter", amount: 50, note: "Bisa, spread terasa berat" },
-              { label: "Disarankan", amount: 200, note: "Nyaman untuk 5 trade/hari" },
-              { label: "Optimal", amount: 500, note: "Spread tidak signifikan" },
-            ].map((t) => (
-              <div key={t.label} className={cn(
-                "rounded-md p-2 text-center",
-                bankroll >= t.amount ? "bg-yes/10 border border-yes/20" : "bg-muted/30"
-              )}>
-                <div className="font-semibold text-foreground">${t.amount}</div>
-                <div className="text-[10px] text-primary font-medium">{t.label}</div>
-                <div className="text-[10px] text-muted-foreground mt-0.5">{t.note}</div>
-              </div>
-            ))}
-          </div>
+      {/* Tier table */}
+      <div className="mt-3 rounded-lg bg-background/60 border border-border p-3">
+        <span className="text-[11px] font-medium text-foreground flex items-center gap-1 mb-2">
+          <Info className="h-3 w-3 text-primary" /> Perbandingan ukuran modal
+        </span>
+        <div className="grid grid-cols-4 gap-2">
+          {[
+            { label: "Terlalu kecil", amount: 20, note: "Bot bisa stop 4 loss", color: "text-no", bg: "bg-no/10 border-no/20" },
+            { label: "Starter", amount: 50, note: "Bisa, spread terasa", color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/20" },
+            { label: "Disarankan", amount: 200, note: "Nyaman & aman", color: "text-primary", bg: "bg-primary/10 border-primary/20" },
+            { label: "Optimal", amount: 500, note: "Spread tidak terasa", color: "text-yes", bg: "bg-yes/10 border-yes/20" },
+          ].map((t) => (
+            <div key={t.label} className={cn(
+              "rounded-md p-2 text-center border",
+              bankroll >= t.amount && (t.amount === 500 || bankroll < ([20,50,200,500].find((x) => x > t.amount) ?? 999))
+                ? t.bg
+                : bankroll === t.amount
+                ? t.bg
+                : "bg-muted/20 border-border/50"
+            )}>
+              <div className={cn("font-bold text-sm", bankroll <= t.amount ? t.color : "text-muted-foreground")}>${t.amount}</div>
+              <div className={cn("text-[10px] font-medium mt-0.5", bankroll <= t.amount ? t.color : "text-muted-foreground")}>{t.label}</div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">{t.note}</div>
+            </div>
+          ))}
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -345,7 +408,7 @@ export default function Backtest() {
 
       {/* Small capital analysis — shown when bankroll ≤ 200 */}
       {form.bankroll <= 200 && (
-        <SmallCapitalPanel bankroll={form.bankroll} />
+        <SmallCapitalPanel bankroll={form.bankroll} maxPosPct={form.maxPositionPct} />
       )}
 
       <div className="rounded-xl border border-border bg-card p-5 mb-6">
