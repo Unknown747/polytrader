@@ -1,7 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { startScheduler } from "./services/scheduler";
-import { startTelegramBot } from "./services/telegramBot";
+import { startScheduler, stopScheduler } from "./services/scheduler";
+import { startTelegramBot, stopTelegramBot } from "./services/telegramBot";
 
 const rawPort = process.env["PORT"];
 
@@ -16,6 +16,16 @@ const port = Number(rawPort);
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
+
+function shutdown(signal: string) {
+  logger.info({ signal }, "Shutting down gracefully");
+  stopTelegramBot();
+  stopScheduler();
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
 
 app.listen(port, (err) => {
   if (err) {

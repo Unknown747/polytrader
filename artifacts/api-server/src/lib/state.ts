@@ -214,7 +214,7 @@ class PortfolioState {
 
     if (newOrder.status === "filled") {
       this.upsertPosition(newOrder);
-      this.appendPnlPoint(newOrder);
+      this.appendPnlPoint();
     }
 
     return newOrder;
@@ -256,18 +256,14 @@ class PortfolioState {
     }
   }
 
-  private appendPnlPoint(order: OrderEntry): void {
+  private appendPnlPoint(): void {
     const today = new Date().toISOString().slice(0, 10);
-    const lastRow = db.prepare("SELECT cumulative FROM portfolio_pnl ORDER BY date DESC LIMIT 1").get() as { cumulative: number } | undefined;
-    const lastCumulative = lastRow?.cumulative ?? 0;
-
     const existing = db.prepare("SELECT date FROM portfolio_pnl WHERE date = ?").get(today);
-    if (existing) {
-      db.prepare("UPDATE portfolio_pnl SET pnl = pnl + 0 WHERE date = ?").run(today);
-    } else {
+    if (!existing) {
+      const lastRow = db.prepare("SELECT cumulative FROM portfolio_pnl ORDER BY date DESC LIMIT 1").get() as { cumulative: number } | undefined;
+      const lastCumulative = lastRow?.cumulative ?? 0;
       db.prepare("INSERT INTO portfolio_pnl (date, pnl, cumulative) VALUES (?, 0, ?)").run(today, lastCumulative);
     }
-    void order;
   }
 
   getSummary() {

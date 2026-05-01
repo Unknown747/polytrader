@@ -41,8 +41,8 @@ pnpm monorepo with the following artifacts and libraries:
 | `services/telegramBot.ts` | Long-polling command bot: `/balance`, `/positions`, `/orders`, `/cancel`, `/markets`, `/scan`, `/status`, `/help`. Rate limiting per command, inline keyboard confirmation for cancellations, `lastUpdateId` persisted in `poly.db` so restarts don't replay old commands. |
 | `lib/db.ts` | SQLite singleton using `better-sqlite3`. Opens `artifacts/api-server/poly.db` (WAL mode). Tables: `portfolio_orders`, `portfolio_positions`, `portfolio_pnl`, `bot_state`. |
 | `services/scheduler.ts` | Immediate first scan (5 s delay), interval scan, daily report; calls `executeOpportunities()` when auto-trading is on |
-| `services/clob.ts` | **Polymarket CLOB API client** — EIP-712 order signing (ethers.js v6), L2 HMAC-SHA256 auth, `placeOrder()`, `getUsdcBalance()`, `getOpenOrders()`, `getFilledTrades()`, `getLivePositions()`, `computeLivePnlHistory()` |
-| `services/autoTrader.ts` | **Auto-trading engine** — daily trade counter, Kelly-fraction sizing capped by `maxPositionPct`, one trade per market/side per day, `executeOpportunities()` places real orders and updates portfolio state |
+| `services/clob.ts` | **Polymarket CLOB API client** — EIP-712 order signing (ethers.js v6), L2 HMAC-SHA256 auth, `placeOrder()`, `getUsdcBalance()`, `getFilledTrades()`, `getLivePositions()`, `computeLivePnlHistory()` |
+| `services/autoTrader.ts` | **Auto-trading engine** — daily trade counter, Kelly-fraction sizing capped by `maxPositionPct`, one trade per market/side per day, `executeOpportunities()` places real orders (YES→BUY, NO→SELL) and updates portfolio state |
 
 ## API Routes
 

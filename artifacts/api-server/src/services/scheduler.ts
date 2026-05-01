@@ -116,7 +116,3 @@ export function restartScheduler() {
 export function triggerManualScan(): void {
   void runScan();
 }
-
-export function triggerDailyReport(): void {
-  void runDailyReport();
-}

@@ -31,7 +31,7 @@ const ORDER_TYPES = {
   ],
 };
 
-export interface ClobCredentials {
+interface ClobCredentials {
   privateKey: string;
   apiKey: string;
   apiSecret: string;
@@ -44,15 +44,6 @@ export interface PlaceOrderParams {
   price: number;
   amount: number;
   question: string;
-}
-
-export interface ClobOrder {
-  orderId: string;
-  tokenId: string;
-  side: string;
-  price: number;
-  size: number;
-  status: string;
 }
 
 function getCreds(): ClobCredentials | null {
@@ -247,38 +238,6 @@ export async function placeOrder(
     const msg = e instanceof Error ? e.message : "Network error";
     logger.error({ err: e, question: params.question }, "CLOB request failed");
     return { success: false, error: msg };
-  }
-}
-
-export async function getOpenOrders(): Promise<ClobOrder[]> {
-  const creds = getCreds();
-  if (!creds) return [];
-  const address = getWalletAddress();
-  if (!address) return [];
-
-  try {
-    const path = `/orders?maker=${address}&status=LIVE`;
-    const headers = buildL2AuthHeaders(creds, "GET", path);
-    const res = await fetch(`${CLOB_URL}${path}`, {
-      headers,
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return [];
-    const data = await res.json() as Array<{
-      id?: string; asset_id?: string; side?: string;
-      price?: string; original_size?: string; status?: string;
-    }>;
-    return data.map((o) => ({
-      orderId: o.id ?? "",
-      tokenId: o.asset_id ?? "",
-      side: o.side ?? "",
-      price: parseFloat(o.price ?? "0"),
-      size: parseFloat(o.original_size ?? "0"),
-      status: o.status ?? "",
-    }));
-  } catch (e) {
-    logger.warn({ err: e }, "Failed to fetch open orders from CLOB");
-    return [];
   }
 }
 

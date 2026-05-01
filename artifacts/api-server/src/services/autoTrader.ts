@@ -145,7 +145,7 @@ export async function executeOpportunities(
 
     const result = await placeOrder({
       tokenId: op.conditionId,
-      side: op.recommendedSide === "YES" ? "BUY" : "BUY",
+      side: op.recommendedSide === "YES" ? "BUY" : "SELL",
       price: op.currentPrice,
       amount: roundedAmount,
       question: op.question,
