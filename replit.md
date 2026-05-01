@@ -21,7 +21,7 @@ pnpm monorepo with the following artifacts and libraries:
 ## Features
 
 - **Correlation Heatmap** — Pairwise Pearson correlation of YES prices across watched markets; adjustable 7–90 day window; concentration risk alerts; summary stats (highly correlated / uncorrelated / negatively correlated pairs). Route: `GET /api/watchlist/correlation`
-- **Dashboard** — Portfolio summary stats, cumulative P&L area chart, trending markets list
+- **Dashboard** — Portfolio summary stats, **Portfolio Risk Score panel** (0–100 composite: HHI concentration 0–40 + resolution urgency 0–30 + drawdown 0–30, SVG gauge + per-metric bars), cumulative P&L area chart, trending markets list
 - **Markets** — Browse/search/filter prediction markets (real Polymarket Gamma API with demo fallback)
 - **Market Detail** — Market info + buy/sell YES/NO order form + **30-day price history chart** + **watchlist star** + **price alert bell** (set Telegram alert on target price)
 - **Positions** — Open positions with unrealized P&L; **SSE live prices** (push every 15s via `/api/prices/stream`), LIVE badge on positions with fresh data, Export CSV
@@ -107,6 +107,7 @@ pnpm monorepo with the following artifacts and libraries:
 | POST | `/api/alerts` | Create a new price alert |
 | DELETE | `/api/alerts/:id` | Delete a price alert |
 | GET | `/api/portfolio/export` | Export CSV — `?type=orders\|positions\|pnl` |
+| GET | `/api/portfolio/risk` | Composite risk score (0–100): concentration HHI, resolution urgency, drawdown |
 
 ## SQLite Database (`poly.db`)
 

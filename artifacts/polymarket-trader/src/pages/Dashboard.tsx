@@ -1,4 +1,5 @@
 import { useGetPortfolioSummary, useGetPortfolioPnl, useGetTrendingMarkets } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
   AreaChart,
@@ -8,9 +9,85 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { TrendingUp, TrendingDown, DollarSign, Target, BarChart3, Trophy } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, Target, Trophy, ShieldAlert } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface RiskData {
+  score: number;
+  label: "Healthy" | "Moderate" | "Elevated";
+  concentration: { score: number; hhi: number; topPositionPct: number; positionCount: number };
+  urgency: { score: number; within7Days: number; urgentValuePct: number };
+  drawdown: { score: number; currentDrawdownPct: number; peakCumulative: number; currentCumulative: number };
+}
+
+// ─── Risk gauge (SVG semi-circle) ─────────────────────────────────────────────
+
+function RiskGauge({ score, label }: { score: number; label: string }) {
+  const r = 46;
+  const cx = 60;
+  const cy = 62;
+  const arcLen = Math.PI * r;
+  const filled = Math.max(0, Math.min(1, score / 100)) * arcLen;
+  const color = score <= 33 ? "#22c55e" : score <= 66 ? "#f59e0b" : "#ef4444";
+  const labelColor = score <= 33 ? "text-yes" : score <= 66 ? "text-amber-400" : "text-no";
+
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <svg viewBox="0 0 120 78" className="w-[140px]">
+        <path
+          d={`M ${cx - r},${cy} A ${r},${r} 0 0 1 ${cx + r},${cy}`}
+          fill="none"
+          stroke="hsl(217 33% 17%)"
+          strokeWidth={11}
+          strokeLinecap="round"
+        />
+        {filled > 0 && (
+          <path
+            d={`M ${cx - r},${cy} A ${r},${r} 0 0 1 ${cx + r},${cy}`}
+            fill="none"
+            stroke={color}
+            strokeWidth={11}
+            strokeLinecap="round"
+            strokeDasharray={`${filled} ${arcLen}`}
+          />
+        )}
+        <text x={cx} y={cy - 10} textAnchor="middle" fontSize={26} fontWeight="bold" fill="white">
+          {score}
+        </text>
+        <text x={cx} y={cy + 7} textAnchor="middle" fontSize={10} fill="hsl(215 20% 55%)">
+          out of 100
+        </text>
+      </svg>
+      <span className={cn("text-xs font-semibold uppercase tracking-widest", labelColor)}>{label}</span>
+    </div>
+  );
+}
+
+// ─── Sub-metric bar ───────────────────────────────────────────────────────────
+
+function SubBar({
+  label, score, max, detail,
+}: { label: string; score: number; max: number; detail: string }) {
+  const pct = Math.min(100, (score / max) * 100);
+  const color =
+    pct < 40 ? "bg-yes" : pct < 75 ? "bg-amber-400" : "bg-no";
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-muted-foreground">{label}</span>
+        <span className="tabular-nums text-foreground font-medium">{score}<span className="text-muted-foreground">/{max}</span></span>
+      </div>
+      <div className="h-1.5 w-full rounded-full bg-accent overflow-hidden">
+        <div className={cn("h-full rounded-full transition-all", color)} style={{ width: `${pct}%` }} />
+      </div>
+      <p className="text-[10px] text-muted-foreground">{detail}</p>
+    </div>
+  );
+}
 
 function StatCard({
   label,
@@ -59,6 +136,11 @@ export default function Dashboard() {
   const { data: summary, isLoading: summaryLoading } = useGetPortfolioSummary({ query: { refetchInterval: 30000 } });
   const { data: pnl, isLoading: pnlLoading } = useGetPortfolioPnl({ query: { refetchInterval: 60000 } });
   const { data: trending, isLoading: trendingLoading } = useGetTrendingMarkets({ query: { refetchInterval: 30000 } });
+  const { data: risk, isLoading: riskLoading } = useQuery<RiskData>({
+    queryKey: ["portfolio-risk"],
+    queryFn: () => fetch(`${import.meta.env.BASE_URL}api/portfolio/risk`).then((r) => r.json() as Promise<RiskData>),
+    refetchInterval: 30000,
+  });
 
   const pnlPositive = (summary?.totalPnl ?? 0) >= 0;
 
@@ -104,6 +186,78 @@ export default function Dashboard() {
               icon={Trophy}
             />
           </>
+        )}
+      </div>
+
+      {/* Risk Panel */}
+      <div className="rounded-xl border border-border bg-card p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+              <ShieldAlert className="h-4 w-4 text-muted-foreground" />
+              Portfolio Risk Score
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Concentration · Urgency · Drawdown</p>
+          </div>
+          {risk && (
+            <span className={cn(
+              "text-xs font-bold px-2 py-0.5 rounded-full",
+              risk.score <= 33 ? "bg-yes/10 text-yes" :
+              risk.score <= 66 ? "bg-amber-400/10 text-amber-400" :
+              "bg-no/10 text-no"
+            )}>
+              {risk.label}
+            </span>
+          )}
+        </div>
+
+        {riskLoading || !risk ? (
+          <div className="flex gap-6">
+            <Skeleton className="w-[140px] h-[100px] rounded-xl shrink-0" />
+            <div className="flex-1 space-y-4">
+              <Skeleton className="h-8" />
+              <Skeleton className="h-8" />
+              <Skeleton className="h-8" />
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col sm:flex-row gap-5 items-center sm:items-start">
+            <div className="shrink-0">
+              <RiskGauge score={risk.score} label={risk.label} />
+            </div>
+            <div className="flex-1 w-full space-y-3.5">
+              <SubBar
+                label="Concentration"
+                score={risk.concentration.score}
+                max={40}
+                detail={
+                  risk.concentration.positionCount === 0
+                    ? "No open positions"
+                    : `${risk.concentration.positionCount} positions · top ${risk.concentration.topPositionPct}% of portfolio · HHI ${risk.concentration.hhi}`
+                }
+              />
+              <SubBar
+                label="Resolution Urgency"
+                score={risk.urgency.score}
+                max={30}
+                detail={
+                  risk.urgency.within7Days === 0
+                    ? "No positions resolving within 7 days"
+                    : `${risk.urgency.within7Days} position${risk.urgency.within7Days !== 1 ? "s" : ""} resolving within 7 days (${risk.urgency.urgentValuePct}% of value)`
+                }
+              />
+              <SubBar
+                label="Drawdown"
+                score={risk.drawdown.score}
+                max={30}
+                detail={
+                  risk.drawdown.currentDrawdownPct === 0
+                    ? "No drawdown from peak"
+                    : `${risk.drawdown.currentDrawdownPct}% below peak ($${risk.drawdown.peakCumulative.toFixed(2)} → $${risk.drawdown.currentCumulative.toFixed(2)})`
+                }
+              />
+            </div>
+          </div>
         )}
       </div>
 
