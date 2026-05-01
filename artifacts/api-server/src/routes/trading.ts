@@ -8,7 +8,7 @@ import {
   RunBacktestResponse,
 } from "@workspace/api-zod";
 import { getCachedMarkets } from "../services/polymarket";
-import { scanOpportunities, getConfig, updateConfig, runBacktest } from "../services/strategy";
+import { scanOpportunities, getConfig, updateConfig, runBacktest, runBacktestComparison } from "../services/strategy";
 import { restartScheduler, triggerManualScan } from "../services/scheduler";
 import { getAutoTraderStats, getTradeHistory } from "../services/autoTrader";
 import { isClobConfigured } from "../services/clob";
@@ -50,6 +50,12 @@ router.post("/strategy/backtest", (req, res) => {
   const body = RunBacktestBody.parse(req.body);
   const result = runBacktest(body);
   res.json(RunBacktestResponse.parse(result));
+});
+
+router.post("/strategy/backtest-compare", (req, res) => {
+  const body = RunBacktestBody.parse(req.body);
+  const result = runBacktestComparison(body);
+  res.json(result);
 });
 
 router.get("/auto-trading/status", async (_req, res) => {

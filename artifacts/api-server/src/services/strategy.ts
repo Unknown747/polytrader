@@ -393,6 +393,8 @@ export interface BacktestResult {
 }
 
 const CLOB_TAKER_FEE = 0.01;
+const CLOB_MAKER_FEE = 0.00;
+const MAKER_FILL_RATE = 0.70; // ~70% of maker limit orders fill in near-resolution markets
 
 const SAMPLE_MARKETS: Array<{ q: string; cat: string; baseProb: number; liquidity: number }> = [
   { q: "Will the Fed cut rates in March 2025?", cat: "Economics", baseProb: 0.78, liquidity: 250_000 },
@@ -441,7 +443,7 @@ function estimateSpread(liquidity: number, rand: () => number): number {
   return base * (0.8 + rand() * 0.4);
 }
 
-export function runBacktest(req: BacktestRequest): BacktestResult {
+function runBacktestWithMode(req: BacktestRequest, mode: "taker" | "maker"): BacktestResult {
   const seed = Math.round(req.daysBack * 31 + req.minProbability * 997 + req.bankroll * 0.07);
   const rand = rng(seed);
   const trades: BacktestTrade[] = [];
@@ -449,11 +451,15 @@ export function runBacktest(req: BacktestRequest): BacktestResult {
   const equityCurve: BacktestPnlPoint[] = [];
   let totalFeesPaid = 0;
   const now = Date.now();
-  const totalTrades = Math.min(Math.round(req.daysBack * (0.8 + rand() * 0.8)), SAMPLE_MARKETS.length * 3);
+  const fee = mode === "taker" ? CLOB_TAKER_FEE : CLOB_MAKER_FEE;
+  const totalCandidates = Math.min(Math.round(req.daysBack * (0.8 + rand() * 0.8)), SAMPLE_MARKETS.length * 3);
   const shuffledMarkets = [...SAMPLE_MARKETS].sort(() => rand() - 0.5);
 
-  for (let i = 0; i < totalTrades; i++) {
-    const progress = i / totalTrades;
+  for (let i = 0; i < totalCandidates; i++) {
+    // Maker orders only fill ~70% of the time in near-resolution markets
+    if (mode === "maker" && rand() > MAKER_FILL_RATE) continue;
+
+    const progress = i / totalCandidates;
     const daysAgo = req.daysBack * (1 - progress) * (0.9 + rand() * 0.2);
     const date = new Date(now - daysAgo * 86400000).toISOString().slice(0, 10);
     const mkt = shuffledMarkets[i % shuffledMarkets.length];
@@ -461,17 +467,20 @@ export function runBacktest(req: BacktestRequest): BacktestResult {
     const spread = estimateSpread(mkt.liquidity, rand);
     const rawProb = mkt.baseProb + (rand() - 0.5) * 0.06;
     const entryPriceRaw = Math.max(req.minProbability, Math.min(0.97, Math.round(rawProb * 100) / 100));
-    const entryPrice = Math.min(0.97, entryPriceRaw + spread / 2);
+    // Maker gets slightly better entry (limit order at mid, not crossing spread)
+    const entryPrice = mode === "maker"
+      ? Math.min(0.97, entryPriceRaw)
+      : Math.min(0.97, entryPriceRaw + spread / 2);
     const isWin = rand() < Math.max(0.40, Math.min(0.96, entryPrice - 0.025));
     const rawExitPrice = isWin ? 1.0 : 0.0;
-    const fee = rawExitPrice * CLOB_TAKER_FEE;
-    const exitPrice = Math.max(0, rawExitPrice - fee);
+    const feeCost = rawExitPrice * fee;
+    const exitPrice = Math.max(0, rawExitPrice - feeCost);
     const b = (1 - entryPrice) / entryPrice;
     const kellyF = Math.max(0, (entryPrice * b - (1 - entryPrice)) / b) / 2;
     const positionPct = Math.min(kellyF, req.maxPositionPct / 100);
     const amount = Math.max(1, Math.round(equity * positionPct * 100) / 100);
     const shares = amount / entryPrice;
-    const feePaid = isWin ? Math.round(shares * fee * 100) / 100 : 0;
+    const feePaid = isWin ? Math.round(shares * feeCost * 100) / 100 : 0;
     const pnl = isWin ? Math.round((shares * exitPrice - amount) * 100) / 100 : Math.round(-amount * 100) / 100;
     const pnlPct = amount > 0 ? Math.round((pnl / amount) * 1000) / 10 : 0;
     totalFeesPaid += feePaid;
@@ -504,4 +513,43 @@ export function runBacktest(req: BacktestRequest): BacktestResult {
     maxDrawdown: Math.round(maxDrawdown * 10000) / 100,
     sharpeRatio, totalFeesPaid: Math.round(totalFeesPaid * 100) / 100, avgSpreadPct, trades, equityCurve,
   };
+}
+
+export function runBacktest(req: BacktestRequest): BacktestResult {
+  return runBacktestWithMode(req, "taker");
+}
+
+export interface BacktestCompareResult {
+  taker: BacktestResult;
+  maker: BacktestResult;
+  feesSaved: number;
+  takerFinalEquity: number;
+  makerFinalEquity: number;
+  verdict: "maker" | "taker" | "tie";
+  verdictReason: string;
+}
+
+export function runBacktestComparison(req: BacktestRequest): BacktestCompareResult {
+  const taker = runBacktestWithMode(req, "taker");
+  const maker = runBacktestWithMode(req, "maker");
+  const feesSaved = Math.round((taker.totalFeesPaid - maker.totalFeesPaid) * 100) / 100;
+  const takerFinalEquity = req.bankroll + taker.totalReturn;
+  const makerFinalEquity = req.bankroll + maker.totalReturn;
+  const diff = makerFinalEquity - takerFinalEquity;
+
+  let verdict: "maker" | "taker" | "tie";
+  let verdictReason: string;
+
+  if (Math.abs(diff) < 0.5) {
+    verdict = "tie";
+    verdictReason = "Perbedaan hasil sangat kecil. Pilih Taker untuk kepastian eksekusi.";
+  } else if (diff > 0) {
+    verdict = "maker";
+    verdictReason = `Maker menghasilkan $${diff.toFixed(2)} lebih banyak berkat hemat fee $${feesSaved.toFixed(2)}, meski ${taker.totalTrades - maker.totalTrades} order tidak terisi.`;
+  } else {
+    verdict = "taker";
+    verdictReason = `Taker lebih untung $${Math.abs(diff).toFixed(2)} karena semua order terisi — kehilangan ${taker.totalTrades - maker.totalTrades} trade pada Maker terlalu merugikan.`;
+  }
+
+  return { taker, maker, feesSaved, takerFinalEquity, makerFinalEquity, verdict, verdictReason };
 }
