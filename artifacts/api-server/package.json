@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@workspace/api-zod": "workspace:*",
+    "better-sqlite3": "^12.9.0",
     "cors": "^2",
     "ethers": "^6.16.0",
     "express": "^5",
@@ -18,6 +19,7 @@
     "pino-http": "^10"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "catalog:",
