@@ -6,7 +6,7 @@ import {
   useGetWalletStatus,
   useTestTelegram,
 } from "@workspace/api-client-react";
-import { Settings2, Send, Wallet, Bot, AlertCircle, CheckCircle2, Zap, Activity, TrendingUp, PlayCircle, RotateCcw, Database, ChevronRight, Key, Shield, Bell } from "lucide-react";
+import { Settings2, Send, Wallet, Bot, AlertCircle, CheckCircle2, Zap, Activity, TrendingUp, PlayCircle, RotateCcw, Database, ChevronRight, Key, Shield, Bell, DollarSign, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -339,6 +339,115 @@ function CredentialWizard({ walletConfigured, apiConfigured, telegramConfigured 
   );
 }
 
+function MinimumCapitalPanel({ bankroll, maxPositionPct, maxDailyTrades }: {
+  bankroll: number;
+  maxPositionPct: number;
+  maxDailyTrades: number;
+}) {
+  const minPerTrade = (bankroll * maxPositionPct) / 100;
+  const maxDailyExposure = minPerTrade * maxDailyTrades;
+  const feePerTrade = minPerTrade * 0.01; // 1% CLOB taker fee
+  const dailyFees = feePerTrade * maxDailyTrades;
+  const absoluteMin = Math.max(20, bankroll);
+  const recommended = Math.max(50, bankroll * 1.5);
+  const comfortable = Math.max(100, bankroll * 3);
+
+  const tiers = [
+    {
+      label: "Minimum Absolut",
+      amount: absoluteMin,
+      color: "text-yellow-400",
+      bg: "bg-yellow-500/10 border-yellow-500/20",
+      dot: "bg-yellow-400",
+      note: "Bisa mulai, tapi ruang gerak sempit",
+    },
+    {
+      label: "Disarankan",
+      amount: recommended,
+      color: "text-yes",
+      bg: "bg-yes/10 border-yes/20",
+      dot: "bg-yes",
+      note: "Cukup untuk ~" + Math.floor(recommended / minPerTrade) + " trade sekaligus",
+    },
+    {
+      label: "Nyaman & Aman",
+      amount: comfortable,
+      color: "text-primary",
+      bg: "bg-primary/10 border-primary/20",
+      dot: "bg-primary",
+      note: "Buffer aman, drawdown tidak panik",
+    },
+  ];
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5 mb-5">
+      <SectionTitle
+        icon={DollarSign}
+        title="Kalkulator Modal Minimum"
+        description="Estimasi modal USDC yang kamu butuhkan berdasarkan konfigurasi strategi aktif"
+      />
+
+      {/* Per-trade breakdown */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+        <div className="rounded-lg bg-muted/40 p-3 space-y-0.5">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Per Trade</div>
+          <div className="font-bold text-base text-foreground">${minPerTrade.toFixed(2)}</div>
+          <div className="text-[10px] text-muted-foreground">{maxPositionPct}% dari bankroll ${bankroll}</div>
+        </div>
+        <div className="rounded-lg bg-muted/40 p-3 space-y-0.5">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Eksposur Harian</div>
+          <div className="font-bold text-base text-foreground">${maxDailyExposure.toFixed(2)}</div>
+          <div className="text-[10px] text-muted-foreground">{maxDailyTrades} trade/hari maks</div>
+        </div>
+        <div className="rounded-lg bg-muted/40 p-3 space-y-0.5">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Fee CLOB / Hari</div>
+          <div className="font-bold text-base text-foreground">${dailyFees.toFixed(3)}</div>
+          <div className="text-[10px] text-muted-foreground">1% taker fee × {maxDailyTrades} trade</div>
+        </div>
+        <div className="rounded-lg bg-muted/40 p-3 space-y-0.5">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Gas (Polygon)</div>
+          <div className="font-bold text-base text-foreground">~$0.001</div>
+          <div className="text-[10px] text-muted-foreground">Hampir gratis</div>
+        </div>
+      </div>
+
+      {/* Tier cards */}
+      <div className="space-y-2.5 mb-5">
+        {tiers.map((t) => (
+          <div key={t.label} className={cn("flex items-center justify-between rounded-lg border p-3.5", t.bg)}>
+            <div className="flex items-center gap-2.5">
+              <span className={cn("h-2.5 w-2.5 rounded-full shrink-0", t.dot)} />
+              <div>
+                <div className={cn("text-sm font-semibold", t.color)}>{t.label}</div>
+                <div className="text-[11px] text-muted-foreground mt-0.5">{t.note}</div>
+              </div>
+            </div>
+            <div className={cn("text-xl font-bold font-mono", t.color)}>
+              ${t.amount.toFixed(0)} <span className="text-xs font-normal">USDC</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Info notes */}
+      <div className="rounded-lg bg-background/60 border border-border p-3.5 space-y-2 text-[11px] text-muted-foreground">
+        <div className="flex items-center gap-1.5 font-medium text-foreground text-xs">
+          <Info className="h-3.5 w-3.5 text-primary" />
+          Catatan penting
+        </div>
+        <ul className="space-y-1.5 list-disc list-inside leading-relaxed">
+          <li>Polymarket minimum order adalah <span className="text-foreground font-medium">$1 USDC</span> per trade</li>
+          <li>CLOB taker fee <span className="text-foreground font-medium">1%</span> dikenakan setiap order tereksekusi</li>
+          <li>Gas fee di Polygon sangat murah, <span className="text-foreground font-medium">{"<$0.01"}</span> per transaksi</li>
+          <li>Angka di atas dihitung dari: <span className="text-primary font-mono">Bankroll ${bankroll} × Max Position {maxPositionPct}%</span></li>
+          <li>Ubah <span className="text-primary">Bankroll</span> dan <span className="text-primary">Max Position Size</span> di bawah untuk lihat perubahan real-time</li>
+          <li>Sisakan <span className="text-foreground font-medium">10–20% USDC</span> sebagai cadangan, jangan invest 100%</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 function SectionTitle({ icon: Icon, title, description }: {
   icon: React.ElementType;
   title: string;
@@ -483,6 +592,12 @@ export default function Settings() {
           telegramConfigured={wallet?.telegramConfigured ?? false}
         />
       </div>
+
+      <MinimumCapitalPanel
+        bankroll={form?.bankroll ?? 100}
+        maxPositionPct={form?.maxPositionPct ?? 5}
+        maxDailyTrades={form?.maxDailyTrades ?? 5}
+      />
 
       <div className="rounded-xl border border-border bg-card p-5 mb-5">
         <SectionTitle
