@@ -1,16 +1,24 @@
 import { logger } from "../lib/logger";
+import db from "../lib/db";
 import type { Opportunity } from "./strategy";
 
 const BASE = "https://api.telegram.org";
 const SEND_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
 
+function getDbCred(key: string): string | undefined {
+  try {
+    const row = db.prepare("SELECT value FROM app_credentials WHERE key = ?").get(key) as { value: string } | undefined;
+    return row?.value || undefined;
+  } catch { return undefined; }
+}
+
 function botToken(): string | undefined {
-  return process.env.TELEGRAM_BOT_TOKEN;
+  return process.env.TELEGRAM_BOT_TOKEN || getDbCred("TELEGRAM_BOT_TOKEN");
 }
 
 function chatId(): string | undefined {
-  return process.env.TELEGRAM_CHAT_ID;
+  return process.env.TELEGRAM_CHAT_ID || getDbCred("TELEGRAM_CHAT_ID");
 }
 
 export function isTelegramConfigured(): boolean {
@@ -163,4 +171,46 @@ export async function notifyDailyReport(params: {
   if (winRate !== undefined) lines.push(`Win Rate: ${winRate.toFixed(1)}%`);
 
   await sendMessage(lines.join("\n"));
+}
+
+export async function notifyPriceAlert(params: {
+  marketId: string;
+  question: string;
+  side: "YES" | "NO";
+  direction: "above" | "below";
+  targetPrice: number;
+  currentPrice: number;
+}): Promise<void> {
+  if (!isTelegramConfigured()) return;
+  const { question, side, direction, targetPrice, currentPrice } = params;
+  const sideEmoji = side === "YES" ? "✅" : "❌";
+  const dirEmoji = direction === "above" ? "📈" : "📉";
+  await sendMessage(
+    `${dirEmoji} <b>Price Alert Triggered!</b>\n\n` +
+    `<b>${question}</b>\n\n` +
+    `${sideEmoji} <b>${side}</b> price is now <b>${(currentPrice * 100).toFixed(0)}¢</b>\n` +
+    `Target: ${direction} <b>${(targetPrice * 100).toFixed(0)}¢</b>`
+  );
+}
+
+export async function notifyExpiringPosition(params: {
+  question: string;
+  side: "YES" | "NO";
+  hoursLeft: number;
+  currentPrice: number;
+  pnl: number;
+  value: number;
+}): Promise<void> {
+  if (!isTelegramConfigured()) return;
+  const { question, side, hoursLeft, currentPrice, pnl, value } = params;
+  const sideEmoji = side === "YES" ? "✅" : "❌";
+  const pnlSign = pnl >= 0 ? "+" : "";
+  const pnlEmoji = pnl >= 0 ? "🟢" : "🔴";
+  await sendMessage(
+    `⏰ <b>Position Expiring Soon!</b>\n\n` +
+    `<b>${question}</b>\n\n` +
+    `${sideEmoji} ${side} | Current: <b>${(currentPrice * 100).toFixed(0)}¢</b>\n` +
+    `Value: $${value.toFixed(2)} | ${pnlEmoji} P&L: ${pnlSign}$${pnl.toFixed(2)}\n` +
+    `⏱ Resolves in ~${hoursLeft}h`
+  );
 }

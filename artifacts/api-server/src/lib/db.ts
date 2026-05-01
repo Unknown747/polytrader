@@ -75,6 +75,28 @@ db.exec(`
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS market_watchlist (
+    market_id TEXT PRIMARY KEY,
+    market_question TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT '',
+    yes_price REAL NOT NULL DEFAULT 0,
+    no_price REAL NOT NULL DEFAULT 0,
+    volume24h REAL NOT NULL DEFAULT 0,
+    added_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS price_alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    market_id TEXT NOT NULL,
+    market_question TEXT NOT NULL,
+    side TEXT NOT NULL CHECK(side IN ('YES','NO')),
+    direction TEXT NOT NULL CHECK(direction IN ('above','below')),
+    target_price REAL NOT NULL,
+    triggered INTEGER NOT NULL DEFAULT 0,
+    triggered_at TEXT,
+    created_at TEXT NOT NULL
+  );
 `);
 
 logger.info({ path: DB_PATH }, "SQLite database opened (poly.db)");

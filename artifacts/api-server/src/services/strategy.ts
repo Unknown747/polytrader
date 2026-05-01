@@ -14,6 +14,7 @@ export interface StrategyConfig {
   telegramAlertsEnabled: boolean;
   maxDailyTrades: number;
   maxOpportunities: number;
+  dailyReportHour: number;
 }
 
 export interface Opportunity {
@@ -49,6 +50,7 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   telegramAlertsEnabled: false,
   maxDailyTrades: 5,
   maxOpportunities: 30,
+  dailyReportHour: 8,
 };
 
 function loadConfigFromDb(): StrategyConfig {

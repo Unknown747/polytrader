@@ -50,6 +50,12 @@ const COOLDOWNS_MS: Record<string, number> = {
   "/creds": 5_000,
   "/setcred": 2_000,
   "/resetdemo": 30_000,
+  "/watch": 3_000,
+  "/unwatch": 3_000,
+  "/watchlist": 5_000,
+  "/alert": 3_000,
+  "/alerts": 5_000,
+  "/delalert": 3_000,
 };
 
 const lastUsed = new Map<string, number>();
@@ -462,6 +468,7 @@ const CONFIG_NUMERIC_KEYS = new Set([
   "bankroll", "maxPositionPct", "minEdge", "minProbability",
   "maxDaysToResolution", "minVolume24h", "minLiquidity",
   "scanIntervalMinutes", "maxDailyTrades", "maxOpportunities",
+  "dailyReportHour",
 ]);
 
 const CONFIG_BOOL_KEYS = new Set([
@@ -778,22 +785,239 @@ async function handleResetDemo(chatId: string | number): Promise<void> {
   }
 }
 
+interface WatchlistRow {
+  market_id: string;
+  market_question: string;
+  category: string;
+  yes_price: number;
+  no_price: number;
+  added_at: string;
+}
+
+async function handleWatch(chatId: string | number, args: string[]): Promise<void> {
+  const marketId = args[0]?.trim();
+  if (!marketId) {
+    await sendReply(chatId, "❌ <b>Usage:</b> <code>/watch &lt;marketId&gt;</code>\n\nUse /markets to find market IDs.");
+    return;
+  }
+
+  const existing = db.prepare("SELECT market_id FROM market_watchlist WHERE market_id = ?").get(marketId) as { market_id: string } | undefined;
+  if (existing) {
+    await sendReply(chatId, `⭐ <b>${marketId}</b> is already in your watchlist.`);
+    return;
+  }
+
+  const allMarkets = await getCachedMarkets().catch(() => []);
+  let question = "";
+  let category = "";
+  let yesPrice = 0.5;
+  let noPrice = 0.5;
+  let volume24h = 0;
+
+  const found = allMarkets.find((m) => m.id === marketId);
+  if (found) {
+    question = found.question;
+    category = found.category;
+    yesPrice = found.yesPrice;
+    noPrice = found.noPrice;
+    volume24h = found.volume24h;
+  } else {
+    question = `Market ${marketId}`;
+  }
+
+  db.prepare(
+    `INSERT OR REPLACE INTO market_watchlist (market_id, market_question, category, yes_price, no_price, volume24h, added_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(marketId, question, category, yesPrice, noPrice, volume24h, new Date().toISOString());
+
+  await sendReply(
+    chatId,
+    `⭐ <b>Added to watchlist!</b>\n\n<b>${question}</b>\nYES: ${(yesPrice * 100).toFixed(0)}¢ | NO: ${(noPrice * 100).toFixed(0)}¢`
+  );
+}
+
+async function handleUnwatch(chatId: string | number, args: string[]): Promise<void> {
+  const marketId = args[0]?.trim();
+  if (!marketId) {
+    await sendReply(chatId, "❌ <b>Usage:</b> <code>/unwatch &lt;marketId&gt;</code>");
+    return;
+  }
+
+  const result = db.prepare("DELETE FROM market_watchlist WHERE market_id = ?").run(marketId);
+  if (result.changes === 0) {
+    await sendReply(chatId, `❓ <code>${marketId}</code> is not in your watchlist.`);
+    return;
+  }
+
+  await sendReply(chatId, `✅ <b>Removed from watchlist:</b> <code>${marketId}</code>`);
+}
+
+async function handleWatchlist(chatId: string | number): Promise<void> {
+  const rows = db.prepare(
+    "SELECT market_id, market_question, category, yes_price, no_price, added_at FROM market_watchlist ORDER BY added_at DESC LIMIT 10"
+  ).all() as WatchlistRow[];
+
+  if (rows.length === 0) {
+    await sendReply(chatId, "📭 <b>Your watchlist is empty.</b>\n\nUse /watch &lt;marketId&gt; to add markets.");
+    return;
+  }
+
+  const lines = [`⭐ <b>Your Watchlist (${rows.length})</b>`, ""];
+  for (const r of rows) {
+    const q = r.market_question.length > 55 ? r.market_question.slice(0, 52) + "..." : r.market_question;
+    lines.push(
+      `<b>${q}</b>`,
+      `YES: ${(r.yes_price * 100).toFixed(0)}¢ | NO: ${(r.no_price * 100).toFixed(0)}¢ | ID: <code>${r.market_id}</code>`,
+      ""
+    );
+  }
+
+  await sendReply(chatId, lines.join("\n"));
+}
+
+interface AlertRow {
+  id: number;
+  market_id: string;
+  market_question: string;
+  side: string;
+  direction: string;
+  target_price: number;
+  triggered: number;
+}
+
+async function handleAlert(chatId: string | number, args: string[]): Promise<void> {
+  if (args.length < 4) {
+    await sendReply(
+      chatId,
+      `📊 <b>Usage:</b> <code>/alert &lt;marketId&gt; &lt;yes|no&gt; &lt;above|below&gt; &lt;price%&gt;</code>\n\n` +
+      `<b>Example:</b> <code>/alert mkt-001 yes above 80</code>\n` +
+      `This alerts when the YES price goes above 80¢.`
+    );
+    return;
+  }
+
+  const [marketId, sideRaw, directionRaw, priceRaw] = args;
+  const side = sideRaw.toUpperCase();
+  const direction = directionRaw.toLowerCase();
+
+  if (!["YES", "NO"].includes(side)) {
+    await sendReply(chatId, "❌ Side must be <code>yes</code> or <code>no</code>.");
+    return;
+  }
+
+  if (!["above", "below"].includes(direction)) {
+    await sendReply(chatId, "❌ Direction must be <code>above</code> or <code>below</code>.");
+    return;
+  }
+
+  const pricePct = parseFloat(priceRaw);
+  if (isNaN(pricePct) || pricePct <= 0 || pricePct >= 100) {
+    await sendReply(chatId, "❌ Price must be a number between 1 and 99 (in cents, e.g. 80 = 80¢).");
+    return;
+  }
+
+  const targetPrice = pricePct / 100;
+
+  const allMarkets = await getCachedMarkets().catch(() => []);
+  const market = allMarkets.find((m) => m.id === marketId);
+  const marketQuestion = market?.question ?? `Market ${marketId}`;
+
+  db.prepare(
+    `INSERT INTO price_alerts (market_id, market_question, side, direction, target_price, triggered, created_at)
+     VALUES (?, ?, ?, ?, ?, 0, ?)`
+  ).run(marketId, marketQuestion, side, direction, targetPrice, new Date().toISOString());
+
+  await sendReply(
+    chatId,
+    `🔔 <b>Alert set!</b>\n\n` +
+    `<b>${marketQuestion}</b>\n` +
+    `Alert when <b>${side}</b> goes <b>${direction}</b> <b>${pricePct.toFixed(0)}¢</b>\n\n` +
+    `<i>Make sure telegramAlertsEnabled is true to receive notifications.</i>`
+  );
+}
+
+async function handleAlerts(chatId: string | number): Promise<void> {
+  const rows = db.prepare(
+    "SELECT id, market_id, market_question, side, direction, target_price, triggered FROM price_alerts ORDER BY triggered ASC, created_at DESC LIMIT 15"
+  ).all() as AlertRow[];
+
+  if (rows.length === 0) {
+    await sendReply(chatId, "📭 <b>No price alerts set.</b>\n\nUse /alert to create one.");
+    return;
+  }
+
+  const active = rows.filter((r) => r.triggered === 0);
+  const done = rows.filter((r) => r.triggered === 1);
+
+  const lines = [`🔔 <b>Price Alerts</b>`, ""];
+
+  if (active.length > 0) {
+    lines.push(`<b>Active (${active.length})</b>`);
+    for (const r of active) {
+      const q = r.market_question.length > 50 ? r.market_question.slice(0, 47) + "..." : r.market_question;
+      lines.push(`  🟡 [${r.id}] ${r.side} ${r.direction} ${(r.target_price * 100).toFixed(0)}¢ — ${q}`);
+    }
+    lines.push("");
+  }
+
+  if (done.length > 0) {
+    lines.push(`<b>Triggered (${done.length})</b>`);
+    for (const r of done.slice(0, 5)) {
+      const q = r.market_question.length > 50 ? r.market_question.slice(0, 47) + "..." : r.market_question;
+      lines.push(`  ✅ [${r.id}] ${r.side} ${r.direction} ${(r.target_price * 100).toFixed(0)}¢ — ${q}`);
+    }
+    lines.push("");
+  }
+
+  lines.push(`<i>Use /delalert &lt;id&gt; to remove an alert.</i>`);
+  await sendReply(chatId, lines.join("\n"));
+}
+
+async function handleDelAlert(chatId: string | number, args: string[]): Promise<void> {
+  const id = parseInt(args[0] ?? "", 10);
+  if (isNaN(id)) {
+    await sendReply(chatId, "❌ <b>Usage:</b> <code>/delalert &lt;id&gt;</code>\n\nUse /alerts to see alert IDs.");
+    return;
+  }
+
+  const result = db.prepare("DELETE FROM price_alerts WHERE id = ?").run(id);
+  if (result.changes === 0) {
+    await sendReply(chatId, `❓ Alert <code>#${id}</code> not found.`);
+    return;
+  }
+
+  await sendReply(chatId, `✅ <b>Alert <code>#${id}</code> deleted.</b>`);
+}
+
 async function handleHelp(chatId: string | number): Promise<void> {
   const lines = [
     `🤖 <b>PolyTrader Bot Commands</b>`,
     "",
-    `/balance — Portfolio balance and P&L summary`,
-    `/positions — View all open positions`,
-    `/orders — Recent order history with fill status`,
-    `/cancel &lt;id&gt; — Cancel an open order (with confirmation)`,
-    `/pnl — P&L history for the last 14 days`,
+    `<b>Portfolio</b>`,
+    `/balance — Balance and P&L summary`,
+    `/positions — Open positions`,
+    `/orders — Recent order history`,
+    `/cancel &lt;id&gt; — Cancel an open order`,
+    `/pnl — P&L history (last 14 days)`,
+    "",
+    `<b>Markets</b>`,
+    `/markets &lt;keyword&gt; — Search markets`,
+    `/scan — Trigger strategy scan`,
+    `/watch &lt;marketId&gt; — Add to watchlist`,
+    `/unwatch &lt;marketId&gt; — Remove from watchlist`,
+    `/watchlist — View your watchlist`,
+    "",
+    `<b>Alerts</b>`,
+    `/alert &lt;id&gt; &lt;yes|no&gt; &lt;above|below&gt; &lt;price%&gt; — Set price alert`,
+    `/alerts — View all price alerts`,
+    `/delalert &lt;id&gt; — Delete a price alert`,
+    "",
+    `<b>Config &amp; Settings</b>`,
     `/config — View or update strategy settings`,
-    `/markets &lt;keyword&gt; — Search Polymarket markets`,
-    `/scan — Trigger a strategy scan for opportunities`,
-    `/status — Auto-trader status and configuration`,
-    `/creds — Show credential connection status`,
-    `/setcred &lt;type&gt; &lt;value&gt; — Set a credential (privatekey, apikey, apisecret, apipassphrase)`,
-    `/resetdemo — Reset all portfolio data to demo values`,
+    `/status — Auto-trader status`,
+    `/creds — Show credential status`,
+    `/setcred &lt;type&gt; &lt;value&gt; — Save credential to DB`,
+    `/resetdemo — Reset portfolio to demo data`,
     `/help — Show this message`,
   ];
   await sendReply(chatId, lines.join("\n"));
@@ -893,6 +1117,12 @@ async function processMessage(message: TelegramMessage): Promise<void> {
     case "/setcred":    await handleSetCred(message.chat.id, args); break;
     case "/creds":      await handleCreds(message.chat.id); break;
     case "/resetdemo":  await handleResetDemo(message.chat.id); break;
+    case "/watch":      await handleWatch(message.chat.id, args); break;
+    case "/unwatch":    await handleUnwatch(message.chat.id, args); break;
+    case "/watchlist":  await handleWatchlist(message.chat.id); break;
+    case "/alert":      await handleAlert(message.chat.id, args); break;
+    case "/alerts":     await handleAlerts(message.chat.id); break;
+    case "/delalert":   await handleDelAlert(message.chat.id, args); break;
     case "/start":
     case "/help":       await handleHelp(message.chat.id); break;
     default:

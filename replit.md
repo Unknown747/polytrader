@@ -22,10 +22,10 @@ pnpm monorepo with the following artifacts and libraries:
 
 - **Dashboard** — Portfolio summary stats, cumulative P&L area chart, trending markets list
 - **Markets** — Browse/search/filter prediction markets (real Polymarket Gamma API with demo fallback)
-- **Market Detail** — Market info + buy/sell YES/NO order form
-- **Positions** — Open positions with unrealized P&L (prices updated automatically every scan)
-- **Orders** — Order history with cancel support
-- **Portfolio** — Cumulative P&L chart, daily P&L bar chart, position breakdown, **live CLOB P&L panel** (real-time positions + realized trade history from Polymarket when credentials are set)
+- **Market Detail** — Market info + buy/sell YES/NO order form + **30-day price history chart** + **watchlist star** + **price alert bell** (set Telegram alert on target price)
+- **Positions** — Open positions with unrealized P&L (auto-refreshes every 30s, **Export CSV**)
+- **Orders** — Order history with cancel support (auto-refreshes every 30s, summary stats, **Export CSV**)
+- **Portfolio** — Cumulative P&L chart, daily P&L bar chart, **Portfolio Allocation donut chart**, position breakdown, **live CLOB P&L panel**, **Export P&L + Positions CSV** (auto-refreshes every 30s)
 - **Strategy Scanner** — Scans near-resolution high-probability markets (>80%, <21 days), composite scoring across 5 factors, half-Kelly sizing
 - **Backtester** — Simulates strategy on historical data, shows equity curve, win rate, Sharpe ratio, trade log
 - **Settings** — Wallet status (real USDC balance from CLOB), Telegram setup, strategy + auto-trading config, auto-trading status panel with recent trades, USDC balance, daily slot counter, and manual scan trigger
@@ -38,9 +38,9 @@ pnpm monorepo with the following artifacts and libraries:
 | `services/strategy.ts` | Composite scoring: edge 35%, expected return 20%, time urgency 20%, liquidity 15%, volume 10%. Config persisted to SQLite (`strategy_config` table) — survives server restarts. |
 | `services/backtest.ts` | Realistic simulation: win rate from entry price, 30 unique market templates, randomised trade timing |
 | `services/telegram.ts` | Retry (3×) + rate-limit handling, top-5 opportunities, real portfolio data in daily reports |
-| `services/telegramBot.ts` | Long-polling command bot: 10 commands (see below). Rate limiting per command, inline keyboard confirmation for cancellations, `lastUpdateId` persisted in `poly.db`. |
-| `lib/db.ts` | SQLite singleton using `better-sqlite3`. Opens `poly.db` (WAL mode). Tables: `portfolio_orders`, `portfolio_positions`, `portfolio_pnl`, `bot_state`, `strategy_config`, `auto_trade_history`. |
-| `services/scheduler.ts` | Runs every N minutes: (1) fetches live markets, (2) **updates all position prices from live market data**, (3) scans for opportunities, (4) sends Telegram alerts if enabled, (5) executes auto-trades if enabled. |
+| `services/telegramBot.ts` | Long-polling command bot: 16 commands (see below). Rate limiting per command, inline keyboard confirmation for cancellations, `lastUpdateId` persisted in `poly.db`. |
+| `lib/db.ts` | SQLite singleton using `better-sqlite3`. Opens `poly.db` (WAL mode). Tables: `portfolio_orders`, `portfolio_positions`, `portfolio_pnl`, `bot_state`, `strategy_config`, `auto_trade_history`, `market_watchlist`, `price_alerts`, `app_credentials`. |
+| `services/scheduler.ts` | Runs every N minutes: (1) fetches live markets, (2) **updates all position prices from live market data**, (3) scans for opportunities, (4) sends Telegram alerts if enabled, (5) executes auto-trades if enabled, (6) **checks price alerts** and fires Telegram if triggered, (7) **alerts expiring positions** (≤48h), (8) **daily summary bot report** at configurable UTC hour. |
 | `services/clob.ts` | **Polymarket CLOB API client** — EIP-712 order signing (ethers.js v6), L2 HMAC-SHA256 auth, `placeOrder()`, `getUsdcBalance()`, `getFilledTrades()`, `getLivePositions()`, `computeLivePnlHistory()` |
 | `services/autoTrader.ts` | **Auto-trading engine** — DB-backed trade history (`auto_trade_history`), daily trade counter from DB (survives restarts), Kelly-fraction sizing capped by `maxPositionPct`, one trade per market/side per day, `executeOpportunities()` places real orders (YES→BUY, NO→SELL). |
 | `app.ts` | Express app with rate limiting: 200 req/15 min general, 30 req/min for write endpoints (`/orders`, `/telegram`, `/auto-trading/scan`). |
@@ -59,12 +59,18 @@ pnpm monorepo with the following artifacts and libraries:
 | `/scan` | Trigger a strategy scan for opportunities (60s cooldown) |
 | `/status` | Auto-trader status: trades today, remaining slots, lifetime count, last scan/trade times |
 | `/creds` | Show status of all configured credentials (env or DB) |
+| `/watch <marketId>` | Add a market to your watchlist |
+| `/unwatch <marketId>` | Remove a market from watchlist |
+| `/watchlist` | View all watched markets with live prices |
+| `/alert <id> <yes\|no> <above\|below> <price%>` | Set a price alert (e.g. `/alert 540816 yes above 80`) |
+| `/alerts` | View all price alerts (active and triggered) |
+| `/delalert <id>` | Delete a price alert by ID |
 | `/setcred <type> <value>` | Save a credential to DB — types: `privatekey`, `apikey`, `apisecret`, `apipassphrase`, `chatid` |
 | `/resetdemo` | Reset all portfolio data (orders, positions, P&L) back to demo values |
 | `/help` | List all commands |
 
 **Config keys updateable via `/config <key> <value>`:**
-- Numbers: `bankroll`, `maxPositionPct`, `minEdge`, `minProbability`, `maxDaysToResolution`, `minVolume24h`, `minLiquidity`, `scanIntervalMinutes`, `maxDailyTrades`, `maxOpportunities`
+- Numbers: `bankroll`, `maxPositionPct`, `minEdge`, `minProbability`, `maxDaysToResolution`, `minVolume24h`, `minLiquidity`, `scanIntervalMinutes`, `maxDailyTrades`, `maxOpportunities`, `dailyReportHour` (UTC hour 0–23, or -1 to disable)
 - Booleans: `autoTradingEnabled`, `telegramAlertsEnabled`
 
 ## API Routes
@@ -91,6 +97,15 @@ pnpm monorepo with the following artifacts and libraries:
 | GET | `/api/auto-trading/status` | Auto-trader status, USDC balance, recent trades from DB |
 | GET | `/api/auto-trading/history` | Full trade history from SQLite |
 | POST | `/api/auto-trading/trigger` | Trigger manual scan + execution cycle |
+| GET | `/api/markets/:id/history` | 30-day price history for a market (simulated, seeded) |
+| GET | `/api/watchlist` | Get all watched markets |
+| POST | `/api/watchlist` | Add market to watchlist |
+| DELETE | `/api/watchlist/:marketId` | Remove market from watchlist |
+| GET | `/api/watchlist/:marketId` | Check if market is watched |
+| GET | `/api/alerts` | List all price alerts |
+| POST | `/api/alerts` | Create a new price alert |
+| DELETE | `/api/alerts/:id` | Delete a price alert |
+| GET | `/api/portfolio/export` | Export CSV — `?type=orders\|positions\|pnl` |
 
 ## SQLite Database (`poly.db`)
 
@@ -102,6 +117,9 @@ pnpm monorepo with the following artifacts and libraries:
 | `bot_state` | Telegram bot `lastUpdateId` for replay protection |
 | `strategy_config` | Persisted strategy config (survives restart) |
 | `auto_trade_history` | All auto-executed trades with success/error status |
+| `market_watchlist` | User-watched markets |
+| `price_alerts` | Price alerts (marketId, side, direction, targetPrice, triggered flag) |
+| `app_credentials` | Credentials stored via `/setcred` (env var priority) |
 
 ## Shared State
 
@@ -147,6 +165,7 @@ Credentials can also be stored in SQLite via the Telegram bot (`/setcred private
 - Graceful shutdown on `SIGTERM`/`SIGINT`: stops Telegram bot polling and clears scheduler timers
 - Workflows: `PORT=8080 pnpm --filter @workspace/api-server run dev` and `PORT=23789 BASE_PATH=/ pnpm --filter @workspace/polymarket-trader run dev`
 
+
 ## Key Files
 
 | File | Purpose |
@@ -158,7 +177,13 @@ Credentials can also be stored in SQLite via the Telegram bot (`/setcred private
 | `artifacts/api-server/src/services/clob.ts` | CLOB API client (signing + live data) |
 | `artifacts/api-server/src/services/autoTrader.ts` | Auto-trading engine (DB-backed history) |
 | `artifacts/api-server/src/services/scheduler.ts` | Scan scheduler (price updates + alerts + auto-trade) |
-| `artifacts/api-server/src/services/telegramBot.ts` | 10-command Telegram bot with /pnl and /config |
+| `artifacts/api-server/src/services/telegramBot.ts` | 16-command Telegram bot with /watch, /alert, /watchlist, /alerts commands |
 | `artifacts/api-server/src/app.ts` | Express app with rate limiting |
-| `artifacts/polymarket-trader/src/pages/Portfolio.tsx` | Portfolio page with live CLOB panel |
+| `artifacts/api-server/src/routes/watchlist.ts` | Watchlist CRUD routes |
+| `artifacts/api-server/src/routes/alerts.ts` | Price alerts CRUD routes |
+| `artifacts/api-server/src/routes/marketHistory.ts` | Market price history (30d simulated) |
+| `artifacts/api-server/src/routes/export.ts` | CSV export for orders/positions/pnl |
+| `artifacts/polymarket-trader/src/pages/Portfolio.tsx` | Portfolio page with live CLOB panel + pie chart + CSV export |
+| `artifacts/polymarket-trader/src/pages/MarketDetail.tsx` | Market detail with 30d price chart, watchlist star, price alert bell |
+| `artifacts/polymarket-trader/src/pages/Markets.tsx` | Markets list with watchlist star buttons + filter |
 | `artifacts/polymarket-trader/src/pages/Settings.tsx` | Settings page with Telegram bot command reference |

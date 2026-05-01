@@ -1,21 +1,41 @@
 import { useListPositions } from "@workspace/api-client-react";
 import { Link } from "wouter";
-import { TrendingUp, TrendingDown, ExternalLink } from "lucide-react";
+import { TrendingUp, TrendingDown, ExternalLink, Download } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+function handleExport() {
+  const url = `${import.meta.env.BASE_URL}api/portfolio/export?type=positions`;
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "positions.csv";
+  a.click();
+}
+
 export default function Positions() {
-  const { data: positions, isLoading } = useListPositions();
+  const { data: positions, isLoading } = useListPositions({ query: { refetchInterval: 30000 } });
 
   const totalPnl = positions?.reduce((sum, p) => sum + p.pnl, 0) ?? 0;
   const totalValue = positions?.reduce((sum, p) => sum + p.value, 0) ?? 0;
 
   return (
     <div className="p-6 space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-foreground">Positions</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Open positions in prediction markets</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-foreground">Positions</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Open positions · Auto-refreshes every 30s</p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleExport}
+          className="gap-1.5 text-xs h-8"
+        >
+          <Download className="h-3.5 w-3.5" />
+          Export CSV
+        </Button>
       </div>
 
       {positions && (

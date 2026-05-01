@@ -56,9 +56,9 @@ function PriceBar({ yes, no }: { yes: number; no: number }) {
 }
 
 export default function Dashboard() {
-  const { data: summary, isLoading: summaryLoading } = useGetPortfolioSummary();
-  const { data: pnl, isLoading: pnlLoading } = useGetPortfolioPnl();
-  const { data: trending, isLoading: trendingLoading } = useGetTrendingMarkets();
+  const { data: summary, isLoading: summaryLoading } = useGetPortfolioSummary({ query: { refetchInterval: 30000 } });
+  const { data: pnl, isLoading: pnlLoading } = useGetPortfolioPnl({ query: { refetchInterval: 60000 } });
+  const { data: trending, isLoading: trendingLoading } = useGetTrendingMarkets({ query: { refetchInterval: 30000 } });
 
   const pnlPositive = (summary?.totalPnl ?? 0) >= 0;
 
@@ -66,7 +66,7 @@ export default function Dashboard() {
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-xl font-bold text-foreground">Dashboard</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Portfolio overview — fake data mode</p>
+        <p className="text-sm text-muted-foreground mt-0.5">Portfolio overview · Auto-refreshes every 30s</p>
       </div>
 
       {/* Stats */}

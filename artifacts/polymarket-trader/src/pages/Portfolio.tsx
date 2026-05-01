@@ -9,17 +9,39 @@ import {
   Area,
   BarChart,
   Bar,
+  PieChart,
+  Pie,
+  Cell,
   XAxis,
   YAxis,
   Tooltip,
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
-import { TrendingUp, TrendingDown, Wifi, WifiOff, RefreshCw } from "lucide-react";
+import { TrendingUp, TrendingDown, Wifi, WifiOff, RefreshCw, Download } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+
+function handleExport(type: "orders" | "positions" | "pnl") {
+  const url = `${import.meta.env.BASE_URL}api/portfolio/export?type=${type}`;
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${type}.csv`;
+  a.click();
+}
+
+const PIE_COLORS = [
+  "hsl(142 76% 46%)",
+  "hsl(217 91% 60%)",
+  "hsl(280 65% 60%)",
+  "hsl(38 92% 50%)",
+  "hsl(0 72% 51%)",
+  "hsl(160 60% 45%)",
+  "hsl(48 96% 53%)",
+  "hsl(199 89% 48%)",
+];
 
 interface LivePortfolio {
   available: boolean;
@@ -95,9 +117,9 @@ function StatCard({
 }
 
 export default function Portfolio() {
-  const { data: summary, isLoading: summaryLoading } = useGetPortfolioSummary();
-  const { data: pnl, isLoading: pnlLoading } = useGetPortfolioPnl();
-  const { data: positions, isLoading: posLoading } = useListPositions();
+  const { data: summary, isLoading: summaryLoading } = useGetPortfolioSummary({ query: { refetchInterval: 30000 } });
+  const { data: pnl, isLoading: pnlLoading } = useGetPortfolioPnl({ query: { refetchInterval: 60000 } });
+  const { data: positions, isLoading: posLoading } = useListPositions({ query: { refetchInterval: 30000 } });
   const {
     data: live,
     isLoading: liveLoading,
@@ -109,11 +131,29 @@ export default function Portfolio() {
   const livePnlPositive = (live?.summary.totalPnl ?? 0) >= 0;
   const hasLive = live?.available === true;
 
+  const pieData = positions?.map((p) => ({
+    name: p.marketQuestion.length > 30 ? p.marketQuestion.slice(0, 27) + "…" : p.marketQuestion,
+    value: p.value,
+    side: p.side,
+  })) ?? [];
+
   return (
     <div className="p-6 space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-foreground">Portfolio</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Performance analytics</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-foreground">Portfolio</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Performance analytics · Auto-refreshes every 30s</p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => handleExport("pnl")} className="gap-1.5 text-xs h-8">
+            <Download className="h-3.5 w-3.5" />
+            P&L CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => handleExport("positions")} className="gap-1.5 text-xs h-8">
+            <Download className="h-3.5 w-3.5" />
+            Positions CSV
+          </Button>
+        </div>
       </div>
 
       {/* Summary cards */}
@@ -191,6 +231,45 @@ export default function Portfolio() {
           </ResponsiveContainer>
         )}
       </div>
+
+      {/* Pie chart allocation */}
+      {pieData.length > 0 && (
+        <div className="rounded-xl border border-border bg-card p-5">
+          <h2 className="text-sm font-semibold text-foreground mb-4">Portfolio Allocation</h2>
+          <div className="flex items-center gap-6">
+            <ResponsiveContainer width={160} height={160}>
+              <PieChart>
+                <Pie
+                  data={pieData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={42}
+                  outerRadius={72}
+                  paddingAngle={2}
+                  dataKey="value"
+                >
+                  {pieData.map((_, index) => (
+                    <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} strokeWidth={0} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  contentStyle={{ background: "hsl(222 47% 9%)", border: "1px solid hsl(217 33% 17%)", borderRadius: "8px", fontSize: 11 }}
+                  formatter={(v: number, _name: string, props: { payload?: { name: string } }) => [`$${v.toFixed(2)}`, props.payload?.name ?? ""]}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="flex-1 space-y-1.5">
+              {pieData.map((item, index) => (
+                <div key={index} className="flex items-center gap-2 text-xs">
+                  <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: PIE_COLORS[index % PIE_COLORS.length] }} />
+                  <span className="text-muted-foreground flex-1 truncate">{item.name}</span>
+                  <span className="font-mono text-foreground shrink-0">${item.value.toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Positions breakdown */}
       <div className="rounded-xl border border-border bg-card p-5">
