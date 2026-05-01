@@ -16,8 +16,8 @@ export interface GammaMarket {
   active: boolean;
   closed: boolean;
   archived: boolean;
-  volume24hr: number;
-  liquidity: number;
+  volume24hr: number | string;
+  liquidity: number | string;
   clobTokenIds?: string;
   tags?: Array<{ id: string; label: string; slug: string }>;
   resolvedBy?: string;
@@ -61,6 +61,13 @@ function parseTokenId(raw?: string): string {
   }
 }
 
+function parseDateSafe(raw: string | undefined | null): string {
+  if (!raw) return new Date(0).toISOString();
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return new Date(0).toISOString();
+  return d.toISOString();
+}
+
 function parseCategory(tags?: GammaMarket["tags"]): string {
   if (!tags || tags.length === 0) return "General";
   const label = tags[0].label;
@@ -83,9 +90,9 @@ export function normalizeMarket(m: GammaMarket): NormalizedMarket {
     yesPrice,
     noPrice,
     volume: parseFloat(m.volume) || 0,
-    volume24h: m.volume24hr || 0,
-    liquidity: m.liquidity || 0,
-    endDate: m.endDate,
+    volume24h: parseFloat(String(m.volume24hr)) || 0,
+    liquidity: parseFloat(String(m.liquidity)) || 0,
+    endDate: parseDateSafe(m.endDate),
     resolvedOutcome: null,
     description: m.description || "",
     conditionId: m.conditionId || "",
