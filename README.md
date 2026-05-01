@@ -52,7 +52,7 @@ polytrader/
 ### Clone dan install dependencies
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/Unknown747/polytrader.git
 cd polytrader
 pnpm install
 ```
