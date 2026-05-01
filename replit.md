@@ -36,7 +36,9 @@ pnpm monorepo with the following artifacts and libraries:
 - **`services/strategy.ts`** — Composite scoring strategy: edge (35%), expected return (20%), time urgency (20%), liquidity (15%), volume (10%). Configurable `minLiquidity` and `maxOpportunities`. Sorted by composite score, not just edge.
 - **`services/backtest.ts`** — Realistic simulation: win rate derived from entry price (not hardcoded), 30 unique market templates (no cycling), randomized trade timing, sorted output
 - **`services/telegram.ts`** — Retry logic (3 attempts + rate-limit handling), shows top 5 opportunities (not 3), real portfolio data in daily reports, skip if unconfigured
-- **`services/scheduler.ts`** — Immediate first scan on startup (5s delay), real portfolio summary in daily report, `triggerManualScan()` and `triggerDailyReport()` exposed for manual triggers
+- **`services/scheduler.ts`** — Immediate first scan on startup (5s delay), real portfolio summary in daily report, `triggerManualScan()` and `triggerDailyReport()` exposed for manual triggers. After each scan, calls `executeOpportunities()` if auto-trading is enabled.
+- **`services/clob.ts`** — Polymarket CLOB API client: EIP-712 order signing (ethers.js v6), L2 HMAC-SHA256 auth headers, `placeOrder()`, `getUsdcBalance()`, `getOpenOrders()`, `isClobConfigured()`
+- **`services/autoTrader.ts`** — Auto-trading orchestrator: daily trade counter, Kelly-fraction sizing capped by `maxPositionPct`, deduplication (one trade per market per side per day), `executeOpportunities()` places real orders and updates portfolio state
 
 ## Shared State
 
@@ -47,6 +49,18 @@ pnpm monorepo with the following artifacts and libraries:
 - **Markets** — Live Polymarket Gamma API with multi-page fetch; falls back to 10 demo markets if unavailable
 - **Positions, Orders, Portfolio** — Dynamic in-memory state (resets on restart). Orders placed update positions and portfolio in real-time
 - **Strategy** — Live scan against real Gamma API markets; falls back to demo markets if unavailable
+
+## Auto-Trading Setup
+
+To enable live order execution on Polymarket CLOB:
+
+1. Set these environment variables (Replit Secrets):
+   - `POLYMARKET_PRIVATE_KEY` — Ethereum private key (hex, with or without 0x prefix)
+   - `POLYMARKET_API_KEY` — Polymarket CLOB API key
+   - `POLYMARKET_API_SECRET` — Polymarket CLOB API secret (for HMAC signing)
+   - `POLYMARKET_API_PASSPHRASE` — Polymarket CLOB API passphrase
+2. In Settings → Auto-Trading Config, enable the toggle and set `maxDailyTrades`
+3. Orders are signed via EIP-712 (L1 auth) + HMAC-SHA256 (L2 auth) and submitted to `https://clob.polymarket.com/order`
 
 To connect to Polymarket mainnet (Polygon) for live trading, set wallet secrets in Settings (see wallet connection instructions).
 

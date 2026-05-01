@@ -1,15 +1,71 @@
 import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   useGetStrategyConfig,
   useUpdateStrategyConfig,
   useGetWalletStatus,
   useTestTelegram,
 } from "@workspace/api-client-react";
-import { Settings2, Send, Wallet, Bot, AlertCircle, CheckCircle2, Zap } from "lucide-react";
+import { Settings2, Send, Wallet, Bot, AlertCircle, CheckCircle2, Zap, Activity, TrendingUp, PlayCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+
+interface AutoTradingStatus {
+  enabled: boolean;
+  clobConfigured: boolean;
+  tradesToday: number;
+  maxDailyTrades: number;
+  remainingSlots: number;
+  totalTradesLifetime: number;
+  lastScanAt: string | null;
+  lastTradeAt: string | null;
+  usdcBalance: number;
+  recentTrades: Array<{
+    timestamp: string;
+    question: string;
+    side: "YES" | "NO";
+    price: number;
+    amount: number;
+    edge: number;
+    compositeScore: number;
+    success: boolean;
+    orderId: string | null;
+    error: string | null;
+  }>;
+}
+
+function useAutoTradingStatus() {
+  return useQuery<AutoTradingStatus>({
+    queryKey: ["auto-trading-status"],
+    queryFn: async () => {
+      const res = await fetch(`${import.meta.env.BASE_URL}api/auto-trading/status`);
+      if (!res.ok) throw new Error("Failed to fetch auto-trading status");
+      return res.json() as Promise<AutoTradingStatus>;
+    },
+    refetchInterval: 15000,
+  });
+}
+
+function useTriggerScan() {
+  const [pending, setPending] = useState(false);
+  const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
+  const trigger = async () => {
+    setPending(true);
+    setResult(null);
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}api/auto-trading/trigger`, { method: "POST" });
+      const data = await res.json() as { success: boolean; message: string };
+      setResult(data);
+    } catch {
+      setResult({ success: false, message: "Request failed" });
+    } finally {
+      setPending(false);
+    }
+  };
+  return { trigger, pending, result };
+}
 
 type StrategyConfig = {
   autoTradingEnabled: boolean;
@@ -93,6 +149,8 @@ export default function Settings() {
   const { data: config, isLoading: configLoading } = useGetStrategyConfig();
   const { mutate: saveConfig, isPending: saving, isSuccess: saved } = useUpdateStrategyConfig();
   const { mutate: testTelegram, isPending: testing, data: telegramResult } = useTestTelegram();
+  const { data: autoStatus } = useAutoTradingStatus();
+  const { trigger: triggerScan, pending: scanPending, result: scanResult } = useTriggerScan();
 
   const [form, setForm] = useState<StrategyConfig | null>(null);
 
@@ -300,6 +358,144 @@ export default function Settings() {
                 <span className="text-xs text-yes flex items-center gap-1">
                   <CheckCircle2 className="h-3.5 w-3.5" />
                   Saved — scanner restarted
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {autoStatus && (
+        <div className="rounded-xl border border-border bg-card">
+          <div className="flex items-center gap-3 p-4 border-b border-border">
+            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
+              <Activity className="h-4 w-4 text-primary" />
+            </div>
+            <div>
+              <div className="font-semibold text-sm">Auto-Trading Status</div>
+              <div className="text-xs text-muted-foreground">Live execution engine</div>
+            </div>
+            <div className={cn(
+              "ml-auto flex items-center gap-1.5 text-xs px-2 py-1 rounded-full",
+              autoStatus.enabled && autoStatus.clobConfigured
+                ? "bg-yes/10 text-yes"
+                : autoStatus.enabled
+                ? "bg-yellow-500/10 text-yellow-500"
+                : "bg-muted text-muted-foreground"
+            )}>
+              <span className={cn(
+                "h-1.5 w-1.5 rounded-full",
+                autoStatus.enabled && autoStatus.clobConfigured
+                  ? "bg-yes animate-pulse"
+                  : autoStatus.enabled ? "bg-yellow-500" : "bg-muted-foreground"
+              )} />
+              {autoStatus.enabled && autoStatus.clobConfigured
+                ? "Live"
+                : autoStatus.enabled
+                ? "Credentials missing"
+                : "Disabled"}
+            </div>
+          </div>
+          <div className="p-4 space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="rounded-lg bg-muted/40 p-3 space-y-0.5">
+                <div className="text-xs text-muted-foreground">USDC Balance</div>
+                <div className="font-semibold text-sm">${autoStatus.usdcBalance.toFixed(2)}</div>
+              </div>
+              <div className="rounded-lg bg-muted/40 p-3 space-y-0.5">
+                <div className="text-xs text-muted-foreground">Trades Today</div>
+                <div className="font-semibold text-sm">
+                  {autoStatus.tradesToday} / {autoStatus.maxDailyTrades}
+                </div>
+              </div>
+              <div className="rounded-lg bg-muted/40 p-3 space-y-0.5">
+                <div className="text-xs text-muted-foreground">Slots Remaining</div>
+                <div className="font-semibold text-sm">{autoStatus.remainingSlots}</div>
+              </div>
+              <div className="rounded-lg bg-muted/40 p-3 space-y-0.5">
+                <div className="text-xs text-muted-foreground">Total Lifetime</div>
+                <div className="font-semibold text-sm">{autoStatus.totalTradesLifetime}</div>
+              </div>
+            </div>
+
+            {!autoStatus.clobConfigured && autoStatus.enabled && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-xs text-yellow-600 dark:text-yellow-400">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-medium mb-0.5">CLOB credentials required</div>
+                  Set <code className="font-mono">POLYMARKET_PRIVATE_KEY</code>,{" "}
+                  <code className="font-mono">POLYMARKET_API_KEY</code>,{" "}
+                  <code className="font-mono">POLYMARKET_API_SECRET</code>, and{" "}
+                  <code className="font-mono">POLYMARKET_API_PASSPHRASE</code> environment variables to enable live order execution.
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-muted-foreground">
+              <div>Last scan: {autoStatus.lastScanAt
+                ? new Date(autoStatus.lastScanAt).toLocaleString()
+                : "Not yet"}
+              </div>
+              <div>Last trade: {autoStatus.lastTradeAt
+                ? new Date(autoStatus.lastTradeAt).toLocaleString()
+                : "None"}
+              </div>
+            </div>
+
+            {autoStatus.recentTrades.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                  <TrendingUp className="h-3.5 w-3.5" /> Recent Trades
+                </div>
+                <div className="divide-y divide-border rounded-lg border border-border overflow-hidden">
+                  {autoStatus.recentTrades.slice(0, 5).map((trade, i) => (
+                    <div key={i} className="flex items-start gap-3 px-3 py-2 text-xs">
+                      <span className={cn(
+                        "shrink-0 mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold",
+                        trade.side === "YES" ? "bg-yes/10 text-yes" : "bg-no/10 text-no"
+                      )}>{trade.side}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="truncate text-foreground">{trade.question}</div>
+                        <div className="text-muted-foreground mt-0.5">
+                          ${trade.amount.toFixed(2)} @ {(trade.price * 100).toFixed(0)}¢ · edge {(trade.edge * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        {trade.success
+                          ? <span className="text-yes flex items-center gap-1"><CheckCircle2 className="h-3 w-3" />Filled</span>
+                          : <span className="text-no flex items-center gap-1"><AlertCircle className="h-3 w-3" />Failed</span>
+                        }
+                        <div className="text-muted-foreground mt-0.5">
+                          {new Date(trade.timestamp).toLocaleTimeString()}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center gap-3 pt-1">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={triggerScan}
+                disabled={scanPending || !autoStatus.clobConfigured}
+                className="flex items-center gap-1.5"
+              >
+                <PlayCircle className="h-3.5 w-3.5" />
+                {scanPending ? "Scanning…" : "Trigger Manual Scan"}
+              </Button>
+              {scanResult && (
+                <span className={cn(
+                  "text-xs flex items-center gap-1",
+                  scanResult.success ? "text-yes" : "text-no"
+                )}>
+                  {scanResult.success
+                    ? <CheckCircle2 className="h-3.5 w-3.5" />
+                    : <AlertCircle className="h-3.5 w-3.5" />
+                  }
+                  {scanResult.message}
                 </span>
               )}
             </div>

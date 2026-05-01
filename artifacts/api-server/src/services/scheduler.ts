@@ -3,15 +3,23 @@ import { getCachedMarkets, invalidateCache } from "./polymarket";
 import { scanOpportunities, getConfig } from "./strategy";
 import { notifyOpportunities, notifyDailyReport } from "./telegram";
 import { portfolioState } from "../lib/state";
+import { executeOpportunities } from "./autoTrader";
 
 let scanTimer: ReturnType<typeof setInterval> | null = null;
 let dailyTimer: ReturnType<typeof setInterval> | null = null;
 let lastOpportunityIds = new Set<string>();
+let isScanning = false;
 
 async function runScan() {
+  if (isScanning) {
+    logger.info("Scan already in progress, skipping");
+    return;
+  }
+
   const config = getConfig();
   if (!config.telegramAlertsEnabled && !config.autoTradingEnabled) return;
 
+  isScanning = true;
   try {
     invalidateCache();
     const markets = await getCachedMarkets();
@@ -33,8 +41,18 @@ async function runScan() {
       { total: opportunities.length, new: newOps.length },
       "Strategy scan complete"
     );
+
+    if (config.autoTradingEnabled) {
+      const executed = await executeOpportunities(opportunities, config);
+      if (executed.length > 0) {
+        const succeeded = executed.filter((t) => t.success).length;
+        logger.info({ executed: executed.length, succeeded }, "Auto-trading cycle done");
+      }
+    }
   } catch (e) {
     logger.error({ err: e }, "Strategy scan failed");
+  } finally {
+    isScanning = false;
   }
 }
 
