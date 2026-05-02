@@ -47,3 +47,10 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Termux runtime files
+.termux_setup_done
+.pid_api
+.pid_front
+api-server.log
+frontend.log
