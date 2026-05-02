@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "bash", "web"]
+modules = ["nodejs-20", "bash", "web", "go-1.25"]
 
 [deployment]
 router = "application"
@@ -33,7 +33,7 @@ outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd artifacts/api-server && pnpm run build && PORT=8080 node --enable-source-maps ./dist/index.mjs"
+args = "cd server && go build -o poly-server . && DB_DIR=../artifacts/api-server PORT=8080 ./poly-server"
 waitForPort = 8080
 
 [[workflows.workflow]]
@@ -63,10 +63,6 @@ externalPort = 80
 [[ports]]
 localPort = 8080
 externalPort = 8080
-
-[[ports]]
-localPort = 23789
-externalPort = 3000
 
 [nix]
 channel = "stable-25_05"
