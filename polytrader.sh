@@ -12,7 +12,8 @@
 # ╚══════════════════════════════════════════════════════════╝
 
 set -euo pipefail
-SECONDS=0   # bash builtin — untuk hitung elapsed time
+SECONDS=0           # bash builtin — untuk hitung elapsed time
+SHUTTING_DOWN=0     # flag untuk watchdog loop
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'
@@ -125,13 +126,17 @@ stop_server() {
 }
 
 cleanup() {
+  SHUTTING_DOWN=1
   echo ""
   echo -e "${Y}Stopping PolyTrader...${NC}"
   stop_server "$API_PID" "API server"
   stop_server "$FRONT_PID" "Frontend"
+  # Matikan tail jika masih jalan
+  kill "$TAIL_PID" 2>/dev/null || true
   echo -e "${G}Goodbye! (${SECONDS}s uptime)${NC}"
   exit 0
 }
+TAIL_PID=0
 trap cleanup SIGINT SIGTERM
 
 # ═══════════════════════════════════════════════════════════════
@@ -266,15 +271,24 @@ cmd_status() {
 
   echo ""
   echo -e "${W}Versi:${NC}"
-  info "Node.js : $(node --version 2>/dev/null || echo 'N/A')"
-  info "pnpm    : $(pnpm --version 2>/dev/null || echo 'N/A')"
-  info "Setup   : $(cat "$SETUP_DONE" 2>/dev/null || echo 'belum')"
+  info "Node.js   : $(node --version 2>/dev/null || echo 'N/A')"
+  info "pnpm      : $(pnpm --version 2>/dev/null || echo 'N/A')"
+  info "Setup     : $(cat "$SETUP_DONE" 2>/dev/null || echo 'belum')"
 
   echo ""
-  if [ -f "$API_LOG" ]; then
-    local size_kb; size_kb=$(( $(wc -c < "$API_LOG" 2>/dev/null || echo 0) / 1024 ))
-    info "api-server.log : ${size_kb} KB"
-  fi
+  echo -e "${W}Watchdog:${NC}"
+  info "Max crash : ${WATCHDOG_MAX_RESTARTS}x dalam ${WATCHDOG_WINDOW}s lalu auto-stop"
+  info "Backoff   : 2s → 4s → 8s → ... maks ${WATCHDOG_BACKOFF_MAX}s"
+  info "Rebuild   : otomatis jika source .ts berubah saat restart"
+
+  echo ""
+  echo -e "${W}Log:${NC}"
+  for logf in "$API_LOG" "$FRONT_LOG"; do
+    if [ -f "$logf" ]; then
+      local size_kb; size_kb=$(( $(wc -c < "$logf" 2>/dev/null || echo 0) / 1024 ))
+      info "$(basename "$logf") : ${size_kb} KB  (rotasi otomatis tiap ${LOG_MAX_KB}KB)"
+    fi
+  done
   echo ""
   exit 0
 }
@@ -530,6 +544,85 @@ do_check_and_rebuild() {
   fi
 }
 
+# ── Start satu instance API, simpan PID, tunggu ready ────────────────────────
+start_api_once() {
+  rotate_log "$API_LOG"
+  PORT=8080 node --enable-source-maps "$API_DIST" >> "$API_LOG" 2>&1 &
+  echo $! > "$API_PID"
+}
+
+# ── Watchdog: jaga API tetap hidup, restart otomatis jika crash ──────────────
+#   Max WATCHDOG_MAX_RESTARTS crash berturut-turut dalam WATCHDOG_WINDOW detik.
+#   Jika terlampaui, berhenti dan tampilkan pesan error.
+#   Backoff: 2s → 4s → 8s → … max 30s
+WATCHDOG_MAX_RESTARTS=5
+WATCHDOG_WINDOW=120   # detik
+WATCHDOG_BACKOFF_MAX=30
+
+run_watchdog() {
+  local crash_count=0 window_start=$SECONDS backoff=2 exit_code=0
+
+  while [ "$SHUTTING_DOWN" -eq 0 ]; do
+    # Tunggu API keluar
+    local api_pid; api_pid=$(cat "$API_PID" 2>/dev/null || echo "")
+    [ -z "$api_pid" ] && break
+    wait "$api_pid" 2>/dev/null; exit_code=$?
+
+    # Jika cleanup() sudah dipanggil, hentikan loop
+    [ "$SHUTTING_DOWN" -eq 1 ] && break
+    [ ! -f "$API_PID" ] && break
+
+    # Reset counter jika window sudah lewat
+    if [ $((SECONDS - window_start)) -gt $WATCHDOG_WINDOW ]; then
+      crash_count=0; window_start=$SECONDS; backoff=2
+    fi
+
+    crash_count=$((crash_count + 1))
+
+    # Terlalu sering crash
+    if [ "$crash_count" -ge "$WATCHDOG_MAX_RESTARTS" ]; then
+      echo ""
+      echo -e "${R}╔══════════════════════════════════════════════════════════╗${NC}"
+      echo -e "${R}║  API server crash ${crash_count}x dalam ${WATCHDOG_WINDOW}s — watchdog berhenti  ║${NC}"
+      echo -e "${R}║  Cek error: tail -f $API_LOG          ║${NC}"
+      echo -e "${Y}║  Jalankan ulang: bash polytrader.sh                      ║${NC}"
+      echo -e "${R}╚══════════════════════════════════════════════════════════╝${NC}"
+      break
+    fi
+
+    # Tampilkan notifikasi crash
+    echo ""
+    echo -e "${Y}⚡ [WATCHDOG] API crash (exit ${exit_code}) — restart #${crash_count} dalam ${backoff}s...${NC}"
+    echo -e "${D}   Crash ke-${crash_count}/${WATCHDOG_MAX_RESTARTS} | next backoff: ${backoff}s | uptime: ${SECONDS}s${NC}"
+
+    # Tunggu sebelum restart (backoff eksponensial)
+    sleep "$backoff"
+    backoff=$((backoff * 2))
+    [ "$backoff" -gt "$WATCHDOG_BACKOFF_MAX" ] && backoff=$WATCHDOG_BACKOFF_MAX
+
+    # Auto-rebuild jika source berubah sejak last build
+    if find "$ROOT/artifacts/api-server/src" -name "*.ts" -newer "$API_DIST" 2>/dev/null | grep -q .; then
+      echo -e "${C}▶ [WATCHDOG] Source berubah — rebuild sebelum restart...${NC}"
+      cd "$ROOT/artifacts/api-server" && pnpm run build 2>&1 | grep -E "Done|Error|⚡" || true
+      cd "$ROOT"
+    fi
+
+    # Restart API
+    echo -e "${C}▶ [WATCHDOG] Menjalankan ulang API server...${NC}"
+    start_api_once
+
+    # Tunggu port ready (max 15 detik)
+    local i=0
+    while ! port_open 8080 && [ $i -lt 15 ]; do sleep 1; i=$((i+1)); done
+    if port_open 8080; then
+      echo -e "${G}✓ [WATCHDOG] API kembali online (restart #${crash_count})${NC}"
+    else
+      echo -e "${Y}⚠ [WATCHDOG] API belum merespons, terus memantau...${NC}"
+    fi
+    echo ""
+  done
+}
+
 # ═══════════════════════════════════════════════════════════════
 # PHASE 3 — START
 # ═══════════════════════════════════════════════════════════════
@@ -548,8 +641,8 @@ do_start() {
   fi
 
   # Cek konflik port SEBELUM start
-  check_port_free 8080 "API" || warn "Port 8080 mungkin masalah"
-  check_port_free 5000 "Frontend" || warn "Port 5000 mungkin masalah"
+  check_port_free 8080 "API" || warn "Port 8080 mungkin sudah dipakai"
+  check_port_free 5000 "Frontend" || warn "Port 5000 mungkin sudah dipakai"
 
   # Rotasi log lama
   rotate_log "$API_LOG"
@@ -560,31 +653,32 @@ do_start() {
                || hostname -I 2>/dev/null | awk '{print $1}' \
                || echo "?")
 
-  # Start API
-  step "API server → port 8080..."
-  PORT=8080 node --enable-source-maps "$API_DIST" >> "$API_LOG" 2>&1 &
-  echo $! > "$API_PID"
+  # ── Start API (pertama kali, dimonitor watchdog) ─────────────────────────
+  step "API server → port 8080  [watchdog aktif]..."
+  start_api_once
   printf "  Menunggu"
   wait_for_port 8080 "API server" \
     && ok "API online  ✓" \
-    || { fail "API gagal start — cek: tail -f $API_LOG"; cat "$API_LOG" | tail -5; exit 1; }
+    || { fail "API gagal start — cek: tail -f $API_LOG"; tail -5 "$API_LOG"; exit 1; }
 
-  # Start Frontend
+  # ── Start Frontend ───────────────────────────────────────────────────────
   step "Frontend → port 5000..."
   PORT=5000 BASE_PATH=/ pnpm --filter @workspace/polymarket-trader run dev >> "$FRONT_LOG" 2>&1 &
   echo $! > "$FRONT_PID"
   printf "  Menunggu"
   wait_for_port 5000 "Frontend" \
     && ok "Frontend online  ✓" \
-    || warn "Frontend lambat start — lanjutkan akses nanti"
+    || warn "Frontend lambat, coba buka http://localhost:5000 beberapa saat lagi"
 
-  # Banner
+  # ── Banner ───────────────────────────────────────────────────────────────
   echo ""
   echo -e "${G}╔══════════════════════════════════════════════════════╗${NC}"
   echo -e "${G}║  ✅  PolyTrader AKTIF!   (startup: ${SECONDS}s)             ║${NC}"
   echo -e "${G}║                                                      ║${NC}"
   echo -e "${G}║  📱  Browser di HP:  http://localhost:5000           ║${NC}"
   echo -e "${G}║  💻  Dari PC (WiFi): http://${ip}:5000            ║${NC}"
+  echo -e "${G}║                                                      ║${NC}"
+  echo -e "${G}║  🔁  Watchdog aktif — API restart otomatis jika crash ║${NC}"
   echo -e "${G}║                                                      ║${NC}"
   echo -e "${G}║  bash polytrader.sh --status  → cek status          ║${NC}"
   echo -e "${G}║  bash polytrader.sh --logs    → live logs            ║${NC}"
@@ -593,10 +687,12 @@ do_start() {
   echo -e "${G}╚══════════════════════════════════════════════════════╝${NC}"
   echo ""
 
-  # Stream live API log (watcher)
+  # ── Stream live API log di background ───────────────────────────────────
   tail -F "$API_LOG" 2>/dev/null &
   TAIL_PID=$!
-  wait "$(cat "$API_PID" 2>/dev/null)" 2>/dev/null || true
+
+  # ── Jalankan watchdog (blokir sampai Ctrl+C atau max crash) ─────────────
+  run_watchdog
   kill "$TAIL_PID" 2>/dev/null || true
 }
 
