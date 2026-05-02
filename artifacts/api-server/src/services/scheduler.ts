@@ -1,6 +1,7 @@
 import { logger } from "../lib/db";
 import { getCachedMarkets, invalidateCache } from "./polymarket";
 import { scanOpportunities, getConfig, updateConfig } from "./strategy";
+import { getNetworkMode } from "../lib/networkMode";
 import {
   notifyOpportunities,
   notifyDailyReport,
@@ -546,12 +547,14 @@ async function runScan() {
         await notifyOpportunities(newOps);
       }
 
-      if (config.autoTradingEnabled) {
+      if (config.autoTradingEnabled && getNetworkMode() !== "testnet") {
         const executed = await executeOpportunities(opportunities, config);
         if (executed.length > 0) {
           const succeeded = executed.filter((t) => t.success).length;
           logger.info({ executed: executed.length, succeeded }, "Auto-trading cycle done");
         }
+      } else if (config.autoTradingEnabled && getNetworkMode() === "testnet") {
+        logger.info("Auto-trading skipped — testnet mode active (paper trading only)");
       }
 
       logger.info(
@@ -574,7 +577,9 @@ async function runScan() {
     await runAutoCompound();
 
     // Paper trading — run alongside real scanning
-    if (config.paperTradingMode) {
+    // Also forced when network mode is testnet
+    const isTestnet = getNetworkMode() === "testnet";
+    if (config.paperTradingMode || isTestnet) {
       await executePaperOpportunities(opportunities, config);
       resolvePaperTradesNearResolution(priceMap, config);
     }

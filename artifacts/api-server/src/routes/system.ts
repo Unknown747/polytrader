@@ -5,6 +5,7 @@ import { isClobConfigured, getUsdcBalance, getWalletAddress } from "../services/
 import { seedDemoData } from "../services/telegramBot";
 import db from "../lib/db";
 import { logger } from "../lib/db";
+import { getNetworkMode, setNetworkMode } from "../lib/networkMode";
 
 const router: IRouter = Router();
 
@@ -22,27 +23,47 @@ router.get("/healthz", (_req, res) => {
 });
 
 router.get("/wallet/status", async (_req, res) => {
-  const hasPrivateKey = Boolean(process.env.POLYMARKET_PRIVATE_KEY);
+  const hasPrivateKey = Boolean(process.env.POLYMARKET_PRIVATE_KEY || db.prepare("SELECT value FROM app_credentials WHERE key = ?").get("POLYMARKET_PRIVATE_KEY"));
   const hasApiCreds = Boolean(
-    process.env.POLYMARKET_API_KEY &&
-    process.env.POLYMARKET_API_SECRET &&
-    process.env.POLYMARKET_API_PASSPHRASE
+    (process.env.POLYMARKET_API_KEY || db.prepare("SELECT value FROM app_credentials WHERE key = ?").get("POLYMARKET_API_KEY")) &&
+    (process.env.POLYMARKET_API_SECRET || db.prepare("SELECT value FROM app_credentials WHERE key = ?").get("POLYMARKET_API_SECRET")) &&
+    (process.env.POLYMARKET_API_PASSPHRASE || db.prepare("SELECT value FROM app_credentials WHERE key = ?").get("POLYMARKET_API_PASSPHRASE"))
   );
   const address = hasPrivateKey ? (getWalletAddress() ?? null) : null;
   const maskedAddress = address
     ? address.slice(0, 6) + "••••••••••••••••••••••••••••••••" + address.slice(-4)
     : null;
+  const networkMode = getNetworkMode();
   let usdcBalance = 0;
-  if (isClobConfigured()) usdcBalance = await getUsdcBalance();
-  res.json(GetWalletStatusResponse.parse({
-    connected: hasPrivateKey,
-    address: maskedAddress,
-    usdcBalance,
-    hasApiCredentials: hasApiCreds,
-    network: "Polygon Mainnet",
-    dataSource: hasPrivateKey ? ("live" as const) : ("demo" as const),
-    telegramConfigured: isTelegramConfigured(),
-  }));
+  if (isClobConfigured() && networkMode === "mainnet") usdcBalance = await getUsdcBalance();
+  const networkLabel = networkMode === "testnet" ? "Polygon Amoy (Testnet)" : "Polygon Mainnet";
+  res.json({
+    ...GetWalletStatusResponse.parse({
+      connected: hasPrivateKey,
+      address: maskedAddress,
+      usdcBalance,
+      hasApiCredentials: hasApiCreds,
+      network: networkLabel,
+      dataSource: hasPrivateKey && networkMode === "mainnet" ? ("live" as const) : ("demo" as const),
+      telegramConfigured: isTelegramConfigured(),
+    }),
+    networkMode,
+  });
+});
+
+router.get("/network/mode", (_req, res) => {
+  res.json({ mode: getNetworkMode() });
+});
+
+router.post("/network/mode", (req, res) => {
+  const { mode } = req.body as { mode?: string };
+  if (mode !== "mainnet" && mode !== "testnet") {
+    res.status(400).json({ success: false, error: "mode must be 'mainnet' or 'testnet'" });
+    return;
+  }
+  setNetworkMode(mode);
+  logger.info({ mode }, "Network mode updated");
+  res.json({ success: true, mode });
 });
 
 router.post("/demo/reset", (_req, res) => {

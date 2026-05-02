@@ -5,7 +5,7 @@ import {
   useGetWalletStatus,
   useTestTelegram,
 } from "@workspace/api-client-react";
-import { Settings2, Send, Wallet, Bot, AlertCircle, CheckCircle2, Zap, Activity, TrendingUp, PlayCircle, RotateCcw, Database, ChevronRight, Key, Shield, Bell, DollarSign, Info, RefreshCw, Calculator, FlaskConical, ShieldCheck, ShieldAlert, Percent, Timer } from "lucide-react";
+import { Settings2, Send, Wallet, Bot, AlertCircle, CheckCircle2, Zap, Activity, TrendingUp, PlayCircle, RotateCcw, Database, ChevronRight, Key, Shield, Bell, DollarSign, Info, RefreshCw, Calculator, FlaskConical, ShieldCheck, ShieldAlert, Percent, Timer, Globe, TestTube2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -121,6 +121,201 @@ type StrategyConfig = {
   cooldownAfterLossEnabled: boolean;
   maxRiskPerTradePct: number;
 };
+
+type NetworkMode = "mainnet" | "testnet";
+
+function useNetworkMode() {
+  const [mode, setModeState] = useState<NetworkMode>("mainnet");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch(`${import.meta.env.BASE_URL}api/network/mode`)
+      .then((r) => r.json())
+      .then((d: { mode?: string }) => {
+        if (d.mode === "mainnet" || d.mode === "testnet") setModeState(d.mode);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function setMode(newMode: NetworkMode) {
+    setSaving(true);
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}api/network/mode`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: newMode }),
+      });
+      if (res.ok) setModeState(newMode);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return { mode, loading, saving, setMode };
+}
+
+function NetworkModePanel() {
+  const { mode, loading, saving, setMode } = useNetworkMode();
+  const [confirmMainnet, setConfirmMainnet] = useState(false);
+
+  if (loading) return null;
+
+  const isMainnet = mode === "mainnet";
+  const isTestnet = mode === "testnet";
+
+  async function handleSwitch(target: NetworkMode) {
+    if (target === "mainnet" && !confirmMainnet) {
+      setConfirmMainnet(true);
+      return;
+    }
+    setConfirmMainnet(false);
+    await setMode(target);
+    window.location.reload();
+  }
+
+  return (
+    <div className={cn(
+      "rounded-xl border p-5 mb-5",
+      isTestnet
+        ? "border-blue-500/30 bg-blue-500/5"
+        : "border-border bg-card"
+    )}>
+      <div className="flex items-start gap-3 mb-4">
+        <div className={cn("p-2 rounded-lg", isTestnet ? "bg-blue-500/15" : "bg-primary/10")}>
+          <Globe className={cn("h-4 w-4", isTestnet ? "text-blue-400" : "text-primary")} />
+        </div>
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">Network Mode</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Pilih antara Mainnet (trading nyata) atau Testnet (simulasi paper trading)
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        <button
+          onClick={() => void handleSwitch("testnet")}
+          disabled={saving || isTestnet}
+          className={cn(
+            "flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition-all",
+            isTestnet
+              ? "border-blue-500/50 bg-blue-500/15 ring-1 ring-blue-500/30"
+              : "border-border bg-muted/40 hover:border-blue-500/30 hover:bg-blue-500/5"
+          )}
+        >
+          <div className="flex items-center gap-2">
+            <TestTube2 className={cn("h-4 w-4", isTestnet ? "text-blue-400" : "text-muted-foreground")} />
+            <span className={cn("text-sm font-semibold", isTestnet ? "text-blue-400" : "text-muted-foreground")}>
+              Testnet
+            </span>
+            {isTestnet && (
+              <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                AKTIF
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] text-muted-foreground leading-relaxed">
+            Simulasi paper trading. Gunakan market data nyata tapi semua order hanya virtual — tanpa uang nyata.
+          </p>
+          <div className="flex flex-wrap gap-1 mt-1">
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">Paper USDC</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">Data Nyata</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">0 Risiko</span>
+          </div>
+        </button>
+
+        <button
+          onClick={() => void handleSwitch("mainnet")}
+          disabled={saving || isMainnet}
+          className={cn(
+            "flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition-all",
+            isMainnet
+              ? "border-yes/40 bg-yes/5 ring-1 ring-yes/20"
+              : "border-border bg-muted/40 hover:border-yes/30 hover:bg-yes/5"
+          )}
+        >
+          <div className="flex items-center gap-2">
+            <Globe className={cn("h-4 w-4", isMainnet ? "text-yes" : "text-muted-foreground")} />
+            <span className={cn("text-sm font-semibold", isMainnet ? "text-yes" : "text-muted-foreground")}>
+              Mainnet
+            </span>
+            {isMainnet && (
+              <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded bg-yes/20 text-yes border border-yes/30">
+                AKTIF
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] text-muted-foreground leading-relaxed">
+            Trading nyata di Polygon Mainnet. Order dikirim ke CLOB Polymarket dan menggunakan USDC asli.
+          </p>
+          <div className="flex flex-wrap gap-1 mt-1">
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-yes/10 text-yes border border-yes/20">USDC Nyata</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-yes/10 text-yes border border-yes/20">Polygon Mainnet</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-no/10 text-no border border-no/20">Risiko Nyata</span>
+          </div>
+        </button>
+      </div>
+
+      {confirmMainnet && (
+        <div className="rounded-lg border border-no/30 bg-no/5 p-4 space-y-3 mb-3">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 text-no shrink-0 mt-0.5" />
+            <div>
+              <div className="text-sm font-semibold text-no">Peringatan: Mainnet Aktif</div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Beralih ke Mainnet berarti semua order auto-trading akan dikirim ke Polymarket menggunakan <strong className="text-foreground">USDC asli</strong> dari wallet kamu. Pastikan kamu sudah mengkonfigurasi wallet dan API credentials dengan benar.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="destructive"
+              className="h-7 text-xs"
+              disabled={saving}
+              onClick={() => void handleSwitch("mainnet")}
+            >
+              {saving ? "Switching..." : "Ya, aktifkan Mainnet"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              onClick={() => setConfirmMainnet(false)}
+            >
+              Batal
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <div className={cn(
+        "rounded-lg border p-3 text-[11px]",
+        isTestnet
+          ? "border-blue-500/20 bg-blue-500/5 text-blue-300"
+          : "border-border bg-muted/30 text-muted-foreground"
+      )}>
+        {isTestnet ? (
+          <div className="flex items-start gap-1.5">
+            <TestTube2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+            <span>
+              <strong>Mode Testnet aktif.</strong> Semua auto-trading diblokir dari CLOB nyata. Paper trading berjalan otomatis untuk simulasi strategi tanpa risiko finansial.
+            </span>
+          </div>
+        ) : (
+          <div className="flex items-start gap-1.5">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-yellow-400" />
+            <span>
+              <strong className="text-yellow-400">Mode Mainnet aktif.</strong> Auto-trading akan mengeksekusi order nyata di Polymarket. Pastikan strategi dan risk management sudah dikonfigurasi dengan benar.
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 const WIZARD_STEPS = [
   {
@@ -842,6 +1037,8 @@ export default function Settings() {
           Configure your wallet, strategy, and notifications
         </p>
       </div>
+
+      <NetworkModePanel />
 
       <div className="rounded-xl border border-border bg-card p-5 mb-5">
         <SectionTitle

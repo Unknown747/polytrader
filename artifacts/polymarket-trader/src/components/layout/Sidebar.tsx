@@ -34,6 +34,8 @@ export function Sidebar() {
   const [location] = useLocation();
   const { data: wallet } = useGetWalletStatus();
   const isLive = wallet?.dataSource === "live";
+  const networkMode = (wallet as unknown as { networkMode?: string })?.networkMode ?? "mainnet";
+  const isTestnet = networkMode === "testnet";
 
   return (
     <aside className="w-56 shrink-0 border-r border-border bg-sidebar flex flex-col h-screen sticky top-0">
@@ -45,12 +47,14 @@ export function Sidebar() {
         <span
           className={cn(
             "ml-auto text-[10px] font-medium px-1.5 py-0.5 rounded border",
-            isLive
+            isTestnet
+              ? "bg-blue-500/20 text-blue-400 border-blue-500/30"
+              : isLive
               ? "bg-yes/20 text-yes border-yes/30"
               : "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
           )}
         >
-          {isLive ? "LIVE" : "DEMO"}
+          {isTestnet ? "TESTNET" : isLive ? "MAINNET" : "DEMO"}
         </span>
       </div>
 
@@ -79,16 +83,16 @@ export function Sidebar() {
       <div className="px-4 py-4 border-t border-border">
         <div className="text-xs text-muted-foreground">
           <div className="font-medium text-foreground mb-1">
-            {isLive ? "Polygon Mainnet" : "Demo Mode"}
+            {isTestnet ? "Polygon Amoy (Testnet)" : isLive ? "Polygon Mainnet" : "Demo Mode"}
           </div>
           <div className="flex items-center gap-1.5">
             <span
               className={cn(
                 "h-1.5 w-1.5 rounded-full animate-pulse",
-                isLive ? "bg-yes" : "bg-yellow-400"
+                isTestnet ? "bg-blue-400" : isLive ? "bg-yes" : "bg-yellow-400"
               )}
             />
-            {isLive ? "Live Polymarket data" : "Using demo data"}
+            {isTestnet ? "Paper trading only" : isLive ? "Live Polymarket data" : "Using demo data"}
           </div>
         </div>
       </div>

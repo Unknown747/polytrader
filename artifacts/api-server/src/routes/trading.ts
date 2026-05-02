@@ -17,6 +17,7 @@ import { getRateStats } from "../lib/rateLimit";
 import { logger } from "../lib/db";
 import db from "../lib/db";
 import { FAKE_MARKETS } from "./markets";
+import { getNetworkMode } from "../lib/networkMode";
 
 const router: IRouter = Router();
 
@@ -372,6 +373,17 @@ router.get("/mainnet/preflight", async (_req, res) => {
     detail: config.paperTradingMode
       ? "Paper trading masih aktif! Bot sedang simulasi, bukan trading nyata. Nonaktifkan untuk mainnet."
       : "Paper trading off — bot siap eksekusi order nyata di Polymarket.",
+  });
+
+  // 11. Network mode check
+  const networkMode = getNetworkMode();
+  checks.push({
+    id: "network_mode",
+    label: "Network Mode",
+    status: networkMode === "mainnet" ? "pass" : "fail",
+    detail: networkMode === "mainnet"
+      ? "Network mode set ke Mainnet — bot akan trading di Polygon Mainnet."
+      : "Network mode masih TESTNET! Ganti ke Mainnet di Settings → Network Mode sebelum live trading.",
   });
 
   const allPassed = checks.every((c) => c.status !== "fail");
