@@ -1,6 +1,6 @@
 import { logger } from "../lib/db";
 import type { Opportunity, StrategyConfig } from "./strategy";
-import { computeAdaptiveProfile } from "./strategy";
+import { computeAdaptiveProfile, computeCorrelationPenalty } from "./strategy";
 import { placeOrder, isClobConfigured, getUsdcBalance } from "./clob";
 import { portfolioState } from "../lib/state";
 import { notifyOrderFilled } from "./telegram";
@@ -207,9 +207,30 @@ export function recordMarketPrice(marketId: string, price: number): void {
   db.prepare(
     "INSERT OR REPLACE INTO market_price_history (market_id, price, recorded_at) VALUES (?, ?, ?)"
   ).run(marketId, price, now);
+}
 
+/**
+ * Batch-record market prices in a single DB transaction.
+ * Also prunes stale entries (>2 hours) for all affected markets.
+ */
+export function batchRecordMarketPrices(prices: Map<string, number>): void {
+  if (prices.size === 0) return;
+
+  const insert = db.prepare(
+    "INSERT OR REPLACE INTO market_price_history (market_id, price, recorded_at) VALUES (?, ?, ?)"
+  );
+  const prune = db.prepare(
+    "DELETE FROM market_price_history WHERE market_id = ? AND recorded_at < ?"
+  );
   const cutoff = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-  db.prepare("DELETE FROM market_price_history WHERE market_id = ? AND recorded_at < ?").run(marketId, cutoff);
+  const now = new Date().toISOString();
+
+  db.transaction(() => {
+    for (const [marketId, price] of prices) {
+      insert.run(marketId, price, now);
+      prune.run(marketId, cutoff);
+    }
+  })();
 }
 
 export function isVolatile(marketId: string, currentPrice: number, thresholdPct: number): boolean {
@@ -261,6 +282,42 @@ function shouldSkipMarket(marketId: string, side: "YES" | "NO"): boolean {
   return row.c > 0;
 }
 
+// ─── Slippage risk pre-check ───────────────────────────────────────────────
+
+/**
+ * Before placing an order, verify the order size doesn't exceed
+ * a safe fraction of market liquidity (to avoid excessive slippage).
+ * Returns a reduced (safe) amount or 0 if the market is too illiquid.
+ *
+ * Thresholds:
+ *   - order > 10% of liquidity → reduce to 5% of liquidity (warn)
+ *   - order > 25% of liquidity → skip (liquidity too thin)
+ */
+function safeOrderAmount(amount: number, liquidity: number, question: string): number {
+  if (liquidity <= 0) return 0;
+
+  const pct = amount / liquidity;
+
+  if (pct > 0.25) {
+    logger.warn(
+      { question, amount, liquidity, pctOfLiquidity: (pct * 100).toFixed(1) },
+      "Auto-trading: order would consume >25% of liquidity — skipping to avoid slippage"
+    );
+    return 0;
+  }
+
+  if (pct > 0.10) {
+    const reduced = liquidity * 0.05;
+    logger.warn(
+      { question, original: amount, reduced, liquidity },
+      "Auto-trading: order reduced to 5% of liquidity to limit slippage"
+    );
+    return reduced;
+  }
+
+  return amount;
+}
+
 // ─── Main execution ────────────────────────────────────────────────────────
 
 export async function executeOpportunities(
@@ -281,7 +338,6 @@ export async function executeOpportunities(
     return [];
   }
 
-  // Cooldown after loss check
   if (config.cooldownAfterLossEnabled) {
     const { blocked, reason } = checkAndUpdateLossCooldown(config);
     if (blocked) {
@@ -303,7 +359,7 @@ export async function executeOpportunities(
     return [];
   }
 
-  // ── Adaptive Capital ─────────────────────────────────────────────────────
+  // ── Adaptive Capital ───────────────────────────────────────────────────
   const adaptive = config.autoCapital ? computeAdaptiveProfile(balance, config) : null;
 
   if (adaptive) {
@@ -317,13 +373,25 @@ export async function executeOpportunities(
     }
   }
 
-  const effectiveBankroll = adaptive ? adaptive.effectiveBankroll : config.bankroll;
-  const effectiveMaxPosPct = adaptive ? adaptive.effectiveMaxPosPct : config.maxPositionPct;
-  const effectiveMinEdge = adaptive ? adaptive.minEdgeRequired : config.minEdge;
+  const effectiveBankroll    = adaptive ? adaptive.effectiveBankroll    : config.bankroll;
+  const effectiveMaxPosPct   = adaptive ? adaptive.effectiveMaxPosPct   : config.maxPositionPct;
+  const effectiveMinEdge     = adaptive ? adaptive.minEdgeRequired      : config.minEdge;
   const effectiveMinLiquidity = adaptive ? adaptive.minLiquidityRequired : config.minLiquidity;
 
-  // Minimum risk per trade cap (user-configured max %)
   const riskCapPct = Math.min(config.maxRiskPerTradePct ?? 5, effectiveMaxPosPct);
+
+  // ── Correlation context — open position categories ─────────────────────
+  const openPositions = portfolioState.getPositions();
+
+  // Build a category map from opportunities (category is available there)
+  const categoryMap = new Map<string, string>();
+  for (const op of opportunities) {
+    categoryMap.set(op.marketId, op.category);
+  }
+
+  // Collect categories of open positions by matching marketId
+  const openPositionCategories = openPositions
+    .map((p) => categoryMap.get(p.marketId) ?? "General");
 
   const eligibleOps = opportunities
     .filter((op) => {
@@ -332,12 +400,9 @@ export async function executeOpportunities(
       if (shouldSkipMarket(op.marketId, op.recommendedSide)) return false;
       if (!op.conditionId) return false;
       if (adaptive && op.liquidity < effectiveMinLiquidity) return false;
-
-      // Minimum liquidity check: volume24h < $500 or liquidity < $1000 → skip
       if (op.volume24h !== undefined && op.volume24h < 500) return false;
       if (op.liquidity < 1000) return false;
 
-      // Volatility check
       if (config.volatilityCheckEnabled) {
         if (isVolatile(op.marketId, op.currentPrice, config.volatilityThresholdPct ?? 5)) {
           logger.info({ question: op.question }, "Auto-trading: skipping volatile market");
@@ -355,25 +420,31 @@ export async function executeOpportunities(
   }
 
   const executed: TradeRecord[] = [];
+  // Track categories traded this cycle to apply intra-cycle correlation penalty
+  const tradedThisCycle: string[] = [...openPositionCategories];
 
   for (const op of eligibleOps) {
-    const kellyAmount = effectiveBankroll * op.kellyFraction;
-    const maxAmount = (balance * riskCapPct) / 100;
+    // ── Correlation-aware position sizing ──────────────────────────────
+    const corrPenalty = computeCorrelationPenalty(op.category, tradedThisCycle);
+    if (corrPenalty < 1) {
+      logger.info(
+        { category: op.category, penalty: corrPenalty, question: op.question },
+        "Auto-trading: correlation penalty applied (same-category concentration)"
+      );
+    }
+
+    const kellyAmount = effectiveBankroll * op.kellyFraction * corrPenalty;
+    const maxAmount   = (balance * riskCapPct) / 100;
     let amount = Math.min(
       kellyAmount,
       maxAmount,
-      op.suggestedAmount,
+      op.suggestedAmount * corrPenalty,
       balance * 0.2
     );
 
-    const liquidityLimit = op.liquidity * 0.05;
-    if (amount > liquidityLimit) {
-      logger.warn(
-        { question: op.question, amount, liquidityLimit, liquidity: op.liquidity },
-        "Auto-trading: order size exceeds 5% of market liquidity — reducing to avoid slippage"
-      );
-      amount = liquidityLimit;
-    }
+    // ── CLOB slippage pre-check ────────────────────────────────────────
+    amount = safeOrderAmount(amount, op.liquidity, op.question);
+    if (amount === 0) continue;
 
     if (amount < 0.5) {
       logger.info({ question: op.question, amount }, "Auto-trading: amount too small, skipping");
@@ -390,6 +461,7 @@ export async function executeOpportunities(
         amount: roundedAmount,
         edge: op.edge,
         score: op.compositeScore,
+        corrPenalty,
         riskCapPct,
       },
       "Auto-trading: placing order"
@@ -426,6 +498,9 @@ export async function executeOpportunities(
     if (result.success) {
       lastTradeAt = new Date();
       balanceFetchedAt = 0;
+
+      // Track this category for intra-cycle correlation
+      tradedThisCycle.push(op.category);
 
       portfolioState.addOrder({
         marketId: op.marketId,

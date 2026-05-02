@@ -23,28 +23,19 @@ export interface StrategyConfig {
   takeProfitTier3Pct: number;
   trendFilterEnabled: boolean;
   autoCapital: boolean;
-  // Auto-Compound: reinvest profits → bankroll updated after each scan
   autoCompound: boolean;
-  // Category Filter: comma-separated list of allowed categories; empty = all
   categoryFilter: string;
-  // Paper Trading: simulate orders without real capital
   paperTradingMode: boolean;
-  // Paper bankroll for simulation
   paperBankroll: number;
-  // Paper trading slippage simulation (% of price, default 0.75)
   paperSlippagePct: number;
-  // Paper trading taker fee simulation (%, default 1.0)
   paperTakerFeePct: number;
-  // Volatility check: skip if price moved >N% since last scan
   volatilityCheckEnabled: boolean;
   volatilityThresholdPct: number;
-  // Cooldown after consecutive losses
   cooldownAfterLossEnabled: boolean;
-  // Max risk per trade as % of actual balance
   maxRiskPerTradePct: number;
 }
 
-// ─── Adaptive Capital ───────────────────────────────────────────────────────
+// ─── Adaptive Capital ────────────────────────────────────────────────────────
 
 export interface AdaptiveCapitalProfile {
   effectiveBankroll: number;
@@ -54,7 +45,7 @@ export interface AdaptiveCapitalProfile {
   minEdgeRequired: number;
   mode: "micro" | "small" | "normal" | "comfortable";
   modeLabel: string;
-  tradeCapacity: number;        // how many max-size trades fit in balance
+  tradeCapacity: number;
   canTrade: boolean;
   warnings: string[];
 }
@@ -66,7 +57,6 @@ export function computeAdaptiveProfile(
   const MIN_ORDER = 1;
   const warnings: string[] = [];
 
-  // Determine mode
   let mode: AdaptiveCapitalProfile["mode"];
   let modeLabel: string;
   if (actualBalance < 20) {
@@ -83,27 +73,21 @@ export function computeAdaptiveProfile(
     modeLabel = "Comfortable";
   }
 
-  // Effective bankroll — always the actual balance when autoCapital is on
   const effectiveBankroll = actualBalance;
-
-  // Auto-scale max position pct: ensure per-trade >= $1
-  // E.g. balance=$20 → need pct >= 5% ($1). balance=$10 → need pct >= 10%
   const minPctForMinOrder = actualBalance > 0 ? (MIN_ORDER / actualBalance) * 100 : 100;
   const effectiveMaxPosPct = Math.min(
-    25, // hard ceiling
+    25,
     Math.max(config.maxPositionPct, Math.ceil(minPctForMinOrder))
   );
 
   const perTradeAmount = (effectiveBankroll * effectiveMaxPosPct) / 100;
 
-  // Small capital: require higher liquidity (to keep spread small)
   let minLiquidityRequired = config.minLiquidity;
   if (mode === "micro" || mode === "small") {
     minLiquidityRequired = Math.max(config.minLiquidity, 10_000);
     warnings.push("Hanya market dengan likuiditas >$10,000 (spread lebih kecil)");
   }
 
-  // Small capital: require slightly higher edge to absorb spread cost
   let minEdgeRequired = config.minEdge;
   if (mode === "micro") {
     minEdgeRequired = Math.max(config.minEdge, 0.05);
@@ -235,6 +219,8 @@ export function updateConfig(patch: Partial<StrategyConfig>): StrategyConfig {
   return { ..._config };
 }
 
+// ─── Scoring helpers ─────────────────────────────────────────────────────────
+
 function daysUntil(dateStr: string): number {
   const end = new Date(dateStr).getTime();
   const now = Date.now();
@@ -257,7 +243,16 @@ function volumeScore(volume24h: number): number {
   return 0.2;
 }
 
+/**
+ * Resolution timing urgency.
+ * Markets ≤3 days get a strong non-linear boost — price convergence is
+ * accelerating and the edge is more reliable (less time for surprises).
+ */
 function timeUrgencyScore(days: number, maxDays: number): number {
+  if (days <= 1)  return 1.00;
+  if (days <= 2)  return 0.95;
+  if (days <= 3)  return 0.90;
+  if (days <= 7)  return 0.75 + (7 - days) / 7 * 0.15;
   const ratio = 1 - days / maxDays;
   return Math.pow(ratio, 1.5);
 }
@@ -319,6 +314,12 @@ function computePriceTrend(
   return { trend, slope };
 }
 
+/**
+ * Composite score — weights:
+ *   edge 35% | expected return 20% | time urgency 20% | liquidity 15% | volume 10%
+ * Resolution proximity bonus: extra +0.08 for ≤3 days (accelerating convergence).
+ * Trend adjustment: +0.05 uptrend, -0.12 downtrend.
+ */
 function compositeScore(
   edge: number,
   expectedReturn: number,
@@ -328,38 +329,67 @@ function compositeScore(
   volume24h: number,
   trend: "up" | "flat" | "down"
 ): number {
-  const edgeWeight = 0.35;
-  const returnWeight = 0.20;
-  const timeWeight = 0.20;
-  const liqWeight = 0.15;
-  const volWeight = 0.10;
-
-  const normalizedEdge = Math.min(edge / 0.15, 1);
+  const normalizedEdge   = Math.min(edge / 0.15, 1);
   const normalizedReturn = Math.min(expectedReturn / 0.3, 1);
   const tScore = timeUrgencyScore(days, maxDays);
   const lScore = liquidityScore(liquidity);
   const vScore = volumeScore(volume24h);
 
   let base = (
-    normalizedEdge * edgeWeight +
-    normalizedReturn * returnWeight +
-    tScore * timeWeight +
-    lScore * liqWeight +
-    vScore * volWeight
+    normalizedEdge   * 0.35 +
+    normalizedReturn * 0.20 +
+    tScore           * 0.20 +
+    lScore           * 0.15 +
+    vScore           * 0.10
   );
 
-  if (trend === "up") base = Math.min(1, base + 0.05);
+  // Resolution proximity bonus — short-fuse markets are genuinely better bets
+  if (days <= 3) base = Math.min(1, base + 0.08);
+  else if (days <= 7) base = Math.min(1, base + 0.03);
+
+  if (trend === "up")   base = Math.min(1, base + 0.05);
   else if (trend === "down") base = Math.max(0, base - 0.12);
 
   return base;
 }
 
-function halfKelly(p: number, price: number): number {
+/**
+ * True Half-Kelly with confidence adjustment.
+ *
+ * Full Kelly for a binary outcome = (p - price) / (1 - price)
+ * where p = win probability (fair value), price = current market price.
+ *
+ * Confidence factor (0.5–1.0) shrinks the bet when:
+ *   - Liquidity is thin (our fair value estimate is less reliable)
+ *   - Time horizon is long (more room for surprises)
+ *   - Volume is low (less price discovery)
+ *
+ * Half-Kelly is then divided by 2 for additional safety margin,
+ * resulting in a quarter-to-half Kelly depending on confidence.
+ */
+function adjustedHalfKelly(
+  p: number,
+  price: number,
+  liquidity: number,
+  volume24h: number,
+  days: number,
+  maxDays: number
+): number {
   if (price <= 0 || price >= 1) return 0;
-  const b = (1 - price) / price;
-  const q = 1 - p;
-  const fullKelly = (p * b - q) / b;
-  return Math.max(0, fullKelly / 2);
+
+  const fullKelly = (p - price) / (1 - price);
+  if (fullKelly <= 0) return 0;
+
+  // Confidence: weighted avg of liquidity and volume quality
+  const liqConf = liquidityScore(liquidity);     // 0.2 – 1.0
+  const volConf = volumeScore(volume24h);        // 0.2 – 1.0
+  const timeConf = days <= 3 ? 1.0 :            // near resolution = high confidence
+                   days <= 7 ? 0.85 :
+                   1 - (days / maxDays) * 0.3;   // further = less confident
+
+  const confidence = Math.max(0.4, liqConf * 0.5 + volConf * 0.25 + timeConf * 0.25);
+
+  return Math.max(0, (fullKelly / 2) * confidence);
 }
 
 function riskLevel(days: number, edge: number, liquidity: number): "low" | "medium" | "high" {
@@ -380,8 +410,8 @@ function buildRationale(
   score: number,
   trend: "up" | "flat" | "down"
 ): string {
-  const pct = (price * 100).toFixed(0);
-  const fvPct = (fv * 100).toFixed(0);
+  const pct    = (price * 100).toFixed(0);
+  const fvPct  = (fv * 100).toFixed(0);
   const edgePct = (edge * 100).toFixed(1);
   const scorePct = (score * 100).toFixed(0);
   const dayStr = days < 1 ? "< 1 day" : `${days.toFixed(1)} days`;
@@ -389,7 +419,9 @@ function buildRationale(
   const liq = liquidity >= 1000 ? `$${(liquidity / 1000).toFixed(0)}k` : `$${liquidity}`;
 
   const urgencyNote =
-    days <= 3
+    days <= 1
+      ? "Resolves within 24h — maximum convergence pressure."
+      : days <= 3
       ? "Imminent resolution — price convergence accelerating."
       : days <= 7
       ? "Short time horizon — high-probability outcome likely converging."
@@ -409,23 +441,57 @@ function buildRationale(
   );
 }
 
+/**
+ * Correlation penalty for position sizing.
+ *
+ * Uses category as a proxy for correlation. Each existing open position
+ * in the same category reduces new position size by 15% (capped at 40%).
+ * This prevents over-concentration in correlated events (e.g. multiple
+ * Crypto markets all moving together).
+ */
+export function computeCorrelationPenalty(
+  category: string,
+  openPositionCategories: string[]
+): number {
+  const sameCount = openPositionCategories.filter(
+    (c) => c.toLowerCase() === category.toLowerCase()
+  ).length;
+  return Math.max(0.60, 1 - sameCount * 0.15);
+}
+
+// ─── Main scanner ────────────────────────────────────────────────────────────
+
 export function scanOpportunities(
   markets: NormalizedMarket[],
   config: StrategyConfig = _config
 ): Opportunity[] {
   const opportunities: Opportunity[] = [];
 
+  // Pre-compute allowed categories (empty = all)
+  const allowedCategories: Set<string> | null =
+    config.categoryFilter && config.categoryFilter.trim()
+      ? new Set(config.categoryFilter.split(",").map((c) => c.trim().toLowerCase()))
+      : null;
+
   for (const m of markets) {
+    // ── EARLY FILTERS (before any scoring computation) ────────────────────
     if (m.status !== "active") continue;
 
+    // Category filter
+    if (allowedCategories && !allowedCategories.has(m.category.toLowerCase())) continue;
+
+    // Time filter — resolve at some point in the future, but not too far
     const days = daysUntil(m.endDate);
     if (days > config.maxDaysToResolution || days < 0.05) continue;
+
+    // Liquidity and volume hard cuts — skip entirely if either fails
     if (m.volume24h < config.minVolume24h) continue;
     if (m.liquidity < config.minLiquidity) continue;
 
+    // ── SIDE ANALYSIS (only for markets that pass early filters) ──────────
     const sides: Array<{ side: "YES" | "NO"; price: number }> = [
       { side: "YES", price: m.yesPrice },
-      { side: "NO", price: m.noPrice },
+      { side: "NO",  price: m.noPrice },
     ];
 
     for (const { side, price } of sides) {
@@ -436,13 +502,15 @@ export function scanOpportunities(
       if (edge < config.minEdge) continue;
 
       const { trend } = computePriceTrend(m.id, price);
-
       if (config.trendFilterEnabled && trend === "down" && edge < 0.06) continue;
 
       const expectedReturn = edge / price;
-      const kelly = halfKelly(fv, price);
+
+      // True Half-Kelly with confidence adjustment
+      const kelly = adjustedHalfKelly(fv, price, m.liquidity, m.volume24h, days, config.maxDaysToResolution);
       const cappedKelly = Math.min(kelly, config.maxPositionPct / 100);
       const suggestedAmount = Math.round(config.bankroll * cappedKelly * 100) / 100;
+
       const score = compositeScore(edge, expectedReturn, days, config.maxDaysToResolution, m.liquidity, m.volume24h, trend);
 
       opportunities.push({
@@ -473,7 +541,7 @@ export function scanOpportunities(
     .slice(0, config.maxOpportunities);
 }
 
-// ─── Backtest (merged from backtest.ts) ────────────────────────────────────
+// ─── Backtest ────────────────────────────────────────────────────────────────
 
 export interface BacktestRequest {
   daysBack: number;
@@ -521,7 +589,7 @@ export interface BacktestResult {
 
 const CLOB_TAKER_FEE = 0.01;
 const CLOB_MAKER_FEE = 0.00;
-const MAKER_FILL_RATE = 0.70; // ~70% of maker limit orders fill in near-resolution markets
+const MAKER_FILL_RATE = 0.70;
 
 const SAMPLE_MARKETS: Array<{ q: string; cat: string; baseProb: number; liquidity: number }> = [
   { q: "Will the Fed cut rates in March 2025?", cat: "Economics", baseProb: 0.78, liquidity: 250_000 },
@@ -583,7 +651,6 @@ function runBacktestWithMode(req: BacktestRequest, mode: "taker" | "maker"): Bac
   const shuffledMarkets = [...SAMPLE_MARKETS].sort(() => rand() - 0.5);
 
   for (let i = 0; i < totalCandidates; i++) {
-    // Maker orders only fill ~70% of the time in near-resolution markets
     if (mode === "maker" && rand() > MAKER_FILL_RATE) continue;
 
     const progress = i / totalCandidates;
@@ -594,7 +661,6 @@ function runBacktestWithMode(req: BacktestRequest, mode: "taker" | "maker"): Bac
     const spread = estimateSpread(mkt.liquidity, rand);
     const rawProb = mkt.baseProb + (rand() - 0.5) * 0.06;
     const entryPriceRaw = Math.max(req.minProbability, Math.min(0.97, Math.round(rawProb * 100) / 100));
-    // Maker gets slightly better entry (limit order at mid, not crossing spread)
     const entryPrice = mode === "maker"
       ? Math.min(0.97, entryPriceRaw)
       : Math.min(0.97, entryPriceRaw + spread / 2);
@@ -608,75 +674,125 @@ function runBacktestWithMode(req: BacktestRequest, mode: "taker" | "maker"): Bac
     const amount = Math.max(1, Math.round(equity * positionPct * 100) / 100);
     const shares = amount / entryPrice;
     const feePaid = isWin ? Math.round(shares * feeCost * 100) / 100 : 0;
-    const pnl = isWin ? Math.round((shares * exitPrice - amount) * 100) / 100 : Math.round(-amount * 100) / 100;
+    const pnl = isWin
+      ? Math.round((shares * exitPrice - amount) * 100) / 100
+      : Math.round(-amount * 100) / 100;
     const pnlPct = amount > 0 ? Math.round((pnl / amount) * 1000) / 10 : 0;
     totalFeesPaid += feePaid;
     equity = Math.max(0.01, equity + pnl);
     if (equity > peak) peak = equity;
     const drawdown = peak > 0 ? (peak - equity) / peak : 0;
     if (drawdown > maxDrawdown) maxDrawdown = drawdown;
-    trades.push({ date, question: mkt.q, side, entryPrice, exitPrice: Math.round(exitPrice * 1000) / 1000, amount, pnl, pnlPct, outcome: isWin ? "win" : "loss", feePaid, spread: Math.round(spread * 10000) / 10000 });
-    equityCurve.push({ date, pnl, cumulative: Math.round((equity - req.bankroll) * 100) / 100 });
+
+    trades.push({
+      date,
+      question: mkt.q,
+      side,
+      entryPrice,
+      exitPrice,
+      amount,
+      pnl,
+      pnlPct,
+      outcome: isWin ? "win" : "loss",
+      feePaid,
+      spread: Math.round(spread * 10000) / 100,
+    });
+
+    equityCurve.push({
+      date,
+      pnl: Math.round(pnl * 100) / 100,
+      cumulative: Math.round((equity - req.bankroll) * 100) / 100,
+    });
   }
 
-  trades.sort((a, b) => a.date.localeCompare(b.date));
-  equityCurve.sort((a, b) => a.date.localeCompare(b.date));
-
-  const winning = trades.filter((t) => t.outcome === "win");
   const totalReturn = Math.round((equity - req.bankroll) * 100) / 100;
-  const totalReturnPct = Math.round(((equity - req.bankroll) / req.bankroll) * 10000) / 100;
-  const returns = trades.map((t) => t.pnl / (t.amount || 1));
-  const avgReturn = returns.length > 0 ? returns.reduce((s, r) => s + r, 0) / returns.length : 0;
-  const variance = returns.length > 1 ? returns.reduce((s, r) => s + Math.pow(r - avgReturn, 2), 0) / returns.length : 0;
-  const stdDev = Math.sqrt(variance);
-  const sharpeRatio = stdDev > 0 ? Math.round((avgReturn / stdDev) * Math.sqrt(252) * 100) / 100 : 0;
-  const avgSpreadPct = trades.length > 0 ? Math.round((trades.reduce((s, t) => s + t.spread, 0) / trades.length) * 10000) / 100 : 0;
+  const totalReturnPct = req.bankroll > 0
+    ? Math.round((totalReturn / req.bankroll) * 10000) / 100
+    : 0;
+  const wins = trades.filter((t) => t.outcome === "win");
+  const losses = trades.filter((t) => t.outcome === "loss");
+  const winRate = trades.length > 0 ? Math.round((wins.length / trades.length) * 1000) / 10 : 0;
+  const avgReturn = trades.length > 0
+    ? Math.round((trades.reduce((s, t) => s + t.pnlPct, 0) / trades.length) * 100) / 100
+    : 0;
+
+  const dailyReturns = equityCurve.map((p) => p.pnl);
+  const meanReturn = dailyReturns.length > 0
+    ? dailyReturns.reduce((s, r) => s + r, 0) / dailyReturns.length
+    : 0;
+  const stdReturn = dailyReturns.length > 1
+    ? Math.sqrt(dailyReturns.reduce((s, r) => s + (r - meanReturn) ** 2, 0) / (dailyReturns.length - 1))
+    : 0;
+  const sharpeRatio = stdReturn > 0
+    ? Math.round((meanReturn / stdReturn) * Math.sqrt(252) * 100) / 100
+    : 0;
+
+  const totalSpread = trades.reduce((s, t) => s + t.spread, 0);
+  const avgSpreadPct = trades.length > 0
+    ? Math.round((totalSpread / trades.length) * 100) / 100
+    : 0;
 
   return {
-    totalReturn, totalReturnPct,
-    winRate: Math.round((winning.length / (trades.length || 1)) * 1000) / 10,
-    totalTrades: trades.length, winningTrades: winning.length, losingTrades: trades.length - winning.length,
-    avgReturn: Math.round(avgReturn * 10000) / 100,
+    totalReturn,
+    totalReturnPct,
+    winRate,
+    totalTrades: trades.length,
+    winningTrades: wins.length,
+    losingTrades: losses.length,
+    avgReturn,
     maxDrawdown: Math.round(maxDrawdown * 10000) / 100,
-    sharpeRatio, totalFeesPaid: Math.round(totalFeesPaid * 100) / 100, avgSpreadPct, trades, equityCurve,
+    sharpeRatio,
+    totalFeesPaid: Math.round(totalFeesPaid * 100) / 100,
+    avgSpreadPct,
+    trades: trades.slice(-100),
+    equityCurve,
   };
 }
 
-export function runBacktest(req: BacktestRequest): BacktestResult {
-  return runBacktestWithMode(req, "taker");
-}
-
-export interface BacktestCompareResult {
+export function runBacktest(req: BacktestRequest): {
   taker: BacktestResult;
   maker: BacktestResult;
-  feesSaved: number;
-  takerFinalEquity: number;
-  makerFinalEquity: number;
-  verdict: "maker" | "taker" | "tie";
-  verdictReason: string;
+} {
+  return {
+    taker: runBacktestWithMode(req, "taker"),
+    maker: runBacktestWithMode(req, "maker"),
+  };
 }
 
-export function runBacktestComparison(req: BacktestRequest): BacktestCompareResult {
+export function runBacktestComparison(req: BacktestRequest): {
+  taker: BacktestResult;
+  maker: BacktestResult;
+  summary: {
+    takerReturn: number;
+    makerReturn: number;
+    takerWinRate: number;
+    makerWinRate: number;
+    takerSharpe: number;
+    makerSharpe: number;
+    recommendation: string;
+  };
+} {
   const taker = runBacktestWithMode(req, "taker");
   const maker = runBacktestWithMode(req, "maker");
-  const feesSaved = Math.round((taker.totalFeesPaid - maker.totalFeesPaid) * 100) / 100;
-  const takerFinalEquity = req.bankroll + taker.totalReturn;
-  const makerFinalEquity = req.bankroll + maker.totalReturn;
-  const diff = makerFinalEquity - takerFinalEquity;
 
-  let verdict: "maker" | "taker" | "tie";
-  let verdictReason: string;
+  const recommendation =
+    maker.totalReturn > taker.totalReturn && maker.sharpeRatio > taker.sharpeRatio
+      ? "Maker orders recommended — higher return and better risk-adjusted performance."
+      : taker.totalReturn > maker.totalReturn
+      ? "Taker orders recommended — higher absolute return despite fees."
+      : "Results mixed — consider market liquidity when choosing order type.";
 
-  if (Math.abs(diff) < 0.5) {
-    verdict = "tie";
-    verdictReason = "Perbedaan hasil sangat kecil. Pilih Taker untuk kepastian eksekusi.";
-  } else if (diff > 0) {
-    verdict = "maker";
-    verdictReason = `Maker menghasilkan $${diff.toFixed(2)} lebih banyak berkat hemat fee $${feesSaved.toFixed(2)}, meski ${taker.totalTrades - maker.totalTrades} order tidak terisi.`;
-  } else {
-    verdict = "taker";
-    verdictReason = `Taker lebih untung $${Math.abs(diff).toFixed(2)} karena semua order terisi — kehilangan ${taker.totalTrades - maker.totalTrades} trade pada Maker terlalu merugikan.`;
-  }
-
-  return { taker, maker, feesSaved, takerFinalEquity, makerFinalEquity, verdict, verdictReason };
+  return {
+    taker,
+    maker,
+    summary: {
+      takerReturn: taker.totalReturnPct,
+      makerReturn: maker.totalReturnPct,
+      takerWinRate: taker.winRate,
+      makerWinRate: maker.winRate,
+      takerSharpe: taker.sharpeRatio,
+      makerSharpe: maker.sharpeRatio,
+      recommendation,
+    },
+  };
 }

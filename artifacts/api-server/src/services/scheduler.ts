@@ -15,7 +15,7 @@ import {
   notifyHeartbeatFailure,
 } from "./telegram";
 import { portfolioState } from "../lib/state";
-import { executeOpportunities, recordMarketPrice } from "./autoTrader";
+import { executeOpportunities, batchRecordMarketPrices } from "./autoTrader";
 import { isClobConfigured, getOpenOrders, getUsdcBalance, cancelOrder } from "./clob";
 import { executePaperOpportunities, resolvePaperTradesNearResolution } from "./paperTrader";
 import db from "../lib/db";
@@ -23,15 +23,16 @@ import db from "../lib/db";
 let scanTimer: ReturnType<typeof setInterval> | null = null;
 let dailyTimer: ReturnType<typeof setInterval> | null = null;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+let boostScanTimer: ReturnType<typeof setTimeout> | null = null;
 let lastOpportunityIds = new Set<string>();
 let isScanning = false;
 let lastDailyReportDate = "";
 const alertedExpiringPositions = new Set<string>();
 let scanCycleCount = 0;
 let lastLowBalanceAlertAt = 0;
-const LOW_BALANCE_ALERT_COOLDOWN_MS = 4 * 60 * 60 * 1000; // 4 hours
+const LOW_BALANCE_ALERT_COOLDOWN_MS = 4 * 60 * 60 * 1000;
 let lastAutoCompoundAt = 0;
-const AUTO_COMPOUND_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
+const AUTO_COMPOUND_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 let heartbeatFailCount = 0;
 let lastSuccessfulScanAt = Date.now();
 let athEquity = 0;
@@ -510,12 +511,9 @@ async function runScan() {
       }
       portfolioState.updatePositionPrices(priceMap);
       logger.info({ marketsUpdated: priceMap.size }, "Position prices updated from market data");
-    }
 
-    if (markets.length > 0) {
-      for (const m of markets) {
-        recordMarketPrice(m.id, m.yesPrice);
-      }
+      // Batch all price history writes in one transaction (replaces per-market loop)
+      batchRecordMarketPrices(priceMap);
     }
 
     const config = getConfig();
@@ -587,11 +585,62 @@ async function runScan() {
     if (scanCycleCount % 4 === 0) {
       await reconcileOrphanedOrders();
     }
+
+    // ── Adaptive scan boost ──────────────────────────────────────────────
+    // If any open position resolves within 2 days, schedule an early re-scan
+    // (5 minutes) to catch late price convergence — unless configured interval
+    // is already shorter.
+    scheduleBoostScanIfNeeded(config.scanIntervalMinutes);
   } catch (e) {
     logger.error({ err: e }, "Strategy scan failed");
   } finally {
     isScanning = false;
   }
+}
+
+function scheduleBoostScanIfNeeded(configIntervalMinutes: number): void {
+  const BOOST_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+  // No point boosting if configured interval is already ≤5 min
+  if (configIntervalMinutes <= 5) return;
+
+  const positions = portfolioState.getPositions();
+  if (positions.length === 0) return;
+
+  // We don't have endDate on positions, so we proxy using markets from cache
+  // This is a best-effort: if any position market_id matches a near-resolution
+  // market in the last cached market list, we boost.
+  // Import is circular-safe since getCachedMarkets is already imported.
+  getCachedMarkets().then((markets) => {
+    const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+
+    const nearResolution = positions.some((pos) => {
+      const market = markets.find((m) => m.id === pos.marketId);
+      if (!market?.endDate) return false;
+      const msLeft = new Date(market.endDate).getTime() - now;
+      return msLeft > 0 && msLeft <= TWO_DAYS_MS;
+    });
+
+    if (!nearResolution) return;
+
+    // Clear any existing boost timer
+    if (boostScanTimer) {
+      clearTimeout(boostScanTimer);
+      boostScanTimer = null;
+    }
+
+    boostScanTimer = setTimeout(() => {
+      boostScanTimer = null;
+      logger.info("Adaptive scan: boosted scan triggered (near-resolution position detected)");
+      void runScan();
+    }, BOOST_INTERVAL_MS);
+
+    logger.info(
+      { boostInMinutes: 5 },
+      "Adaptive scan: near-resolution position detected — boost scan scheduled"
+    );
+  }).catch(() => { /* non-critical */ });
 }
 
 export function startScheduler(runImmediately = true) {
@@ -629,9 +678,10 @@ export function startScheduler(runImmediately = true) {
 }
 
 export function stopScheduler() {
-  if (scanTimer) { clearInterval(scanTimer); scanTimer = null; }
-  if (dailyTimer) { clearInterval(dailyTimer); dailyTimer = null; }
-  if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+  if (scanTimer)     { clearInterval(scanTimer);     scanTimer = null; }
+  if (dailyTimer)    { clearInterval(dailyTimer);    dailyTimer = null; }
+  if (heartbeatTimer){ clearInterval(heartbeatTimer); heartbeatTimer = null; }
+  if (boostScanTimer){ clearTimeout(boostScanTimer); boostScanTimer = null; }
 }
 
 export function restartScheduler() {

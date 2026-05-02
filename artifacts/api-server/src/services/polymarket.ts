@@ -184,22 +184,87 @@ export async function fetchMarketById(id: string): Promise<GammaMarket | null> {
   }
 }
 
-let _cache: { markets: NormalizedMarket[]; ts: number } | null = null;
-const CACHE_TTL = 5 * 60 * 1000;
+// ─── Smart cache with incremental change tracking ─────────────────────────
 
+interface CacheEntry {
+  markets: NormalizedMarket[];
+  ts: number;
+  prevPrices: Map<string, number>;
+}
+
+const CACHE_TTL = 5 * 60 * 1000;
+const SIGNIFICANT_CHANGE_PCT = 2.0; // log markets that moved >2%
+
+let _cache: CacheEntry | null = null;
+
+/**
+ * Returns cached markets, refreshing when the TTL expires.
+ *
+ * On each refresh, compares current prices to the previous snapshot and
+ * logs a concise summary of markets with significant price moves (>2%).
+ * This eliminates the need to log all 1000+ markets on every refresh.
+ */
 export async function getCachedMarkets(): Promise<NormalizedMarket[]> {
   if (_cache && Date.now() - _cache.ts < CACHE_TTL) {
     return _cache.markets;
   }
+
+  const prevPrices = _cache?.prevPrices ?? new Map<string, number>();
+
   const raw = await fetchAllActiveMarkets(5);
   const markets = raw
     .filter((m) => !m.archived)
     .map(normalizeMarket);
-  _cache = { markets, ts: Date.now() };
-  logger.info({ count: markets.length }, "Markets cache refreshed");
+
+  // Build new price map and detect significant changes
+  const newPrices = new Map<string, number>();
+  const movers: Array<{ id: string; q: string; prev: number; curr: number; changePct: number }> = [];
+
+  for (const m of markets) {
+    newPrices.set(m.id, m.yesPrice);
+    const prev = prevPrices.get(m.id);
+    if (prev !== undefined && prev > 0) {
+      const changePct = Math.abs((m.yesPrice - prev) / prev) * 100;
+      if (changePct >= SIGNIFICANT_CHANGE_PCT) {
+        movers.push({ id: m.id, q: m.question.slice(0, 60), prev, curr: m.yesPrice, changePct });
+      }
+    }
+  }
+
+  if (movers.length > 0) {
+    logger.info(
+      { movers: movers.slice(0, 10).map((mv) => ({
+          q: mv.q,
+          prev: mv.prev.toFixed(3),
+          curr: mv.curr.toFixed(3),
+          change: `${mv.changePct.toFixed(1)}%`,
+        })),
+        totalMovers: movers.length,
+      },
+      "Market cache refresh — significant price movers detected"
+    );
+  }
+
+  logger.info(
+    { total: markets.length, significant_movers: movers.length },
+    "Markets cache refreshed"
+  );
+
+  _cache = { markets, ts: Date.now(), prevPrices: newPrices };
   return markets;
 }
 
-export function invalidateCache() {
-  _cache = null;
+export function invalidateCache(): void {
+  if (_cache) {
+    // Preserve previous prices for change detection on next refresh
+    _cache = { ..._cache, ts: 0 };
+  }
+}
+
+/**
+ * Returns the previous YES prices map for external use (e.g. volatility detection).
+ * Useful to avoid re-fetching prices that are already in the cache.
+ */
+export function getCachedPrevPrices(): Map<string, number> {
+  return _cache?.prevPrices ?? new Map();
 }
