@@ -5,7 +5,7 @@ import {
   useGetWalletStatus,
   useTestTelegram,
 } from "@workspace/api-client-react";
-import { Settings2, Send, Wallet, Bot, AlertCircle, CheckCircle2, Zap, Activity, TrendingUp, PlayCircle, RotateCcw, Database, ChevronRight, Key, Shield, Bell, DollarSign, Info, RefreshCw, Calculator, FlaskConical, ShieldCheck, ShieldAlert, Percent, Timer, Globe, TestTube2, AlertTriangle } from "lucide-react";
+import { Settings2, Send, Wallet, Bot, AlertCircle, CheckCircle2, Zap, Activity, TrendingUp, PlayCircle, RotateCcw, Database, ChevronRight, Key, Shield, Bell, DollarSign, Info, RefreshCw, Calculator, FlaskConical, ShieldCheck, ShieldAlert, Percent, Timer, Globe, TestTube2, AlertTriangle, Server, Cpu, HardDrive, Clock, BarChart2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1811,8 +1811,9 @@ export default function Settings() {
 
       <MainnetPreflightPanel />
       <KellyCalculatorPanel />
+      <SystemHealthPanel />
 
-      <div className="rounded-xl border border-border bg-card p-5 mt-5">
+      <div className="rounded-xl border border-border bg-card p-5 mt-5" id="demo-data-section">
         <SectionTitle
           icon={Database}
           title="Demo Data"
@@ -1865,6 +1866,189 @@ export default function Settings() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── System Health Panel ──────────────────────────────────────────────────────
+
+interface SystemHealth {
+  status: string;
+  uptime: { seconds: number; human: string };
+  database: { engine: string; path: string };
+  memory: { rss_mb: number; heap_used_mb: number; heap_total_mb: number };
+  scheduler: {
+    running: boolean;
+    scan_cycle_count: number;
+    is_scanning: boolean;
+    last_scan_ago_seconds: number;
+  };
+  integrations: { polymarket_clob: boolean; telegram: boolean };
+  node_version: string;
+  timestamp: string;
+}
+
+function useSystemHealth() {
+  return useQuery<SystemHealth>({
+    queryKey: ["system-health"],
+    queryFn: async () => {
+      const res = await fetch(`${import.meta.env.BASE_URL}api/health`);
+      if (!res.ok) throw new Error("Health check failed");
+      return res.json() as Promise<SystemHealth>;
+    },
+    refetchInterval: 10000,
+    retry: 1,
+  });
+}
+
+function HealthRow({
+  icon: Icon,
+  label,
+  value,
+  badge,
+  badgeOk,
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: string;
+  badge?: string;
+  badgeOk?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between py-2.5 border-b border-border/40 last:border-0">
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Icon className="h-3.5 w-3.5 shrink-0" />
+        <span className="text-xs">{label}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        {badge !== undefined && (
+          <span className={cn(
+            "text-[10px] font-semibold px-1.5 py-0.5 rounded-full",
+            badgeOk
+              ? "bg-yes/10 text-yes"
+              : "bg-muted text-muted-foreground"
+          )}>
+            {badge}
+          </span>
+        )}
+        <span className="text-xs font-medium text-foreground tabular-nums">{value}</span>
+      </div>
+    </div>
+  );
+}
+
+function SystemHealthPanel() {
+  const { data, isLoading, isError, refetch, isFetching } = useSystemHealth();
+
+  const heapPct = data
+    ? Math.round((data.memory.heap_used_mb / data.memory.heap_total_mb) * 100)
+    : 0;
+
+  const lastScanLabel = data
+    ? data.scheduler.is_scanning
+      ? "scanning now…"
+      : data.scheduler.last_scan_ago_seconds < 60
+        ? `${data.scheduler.last_scan_ago_seconds}s ago`
+        : `${Math.floor(data.scheduler.last_scan_ago_seconds / 60)}m ago`
+    : "—";
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5 mt-5">
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex items-start gap-3">
+          <div className="p-2 rounded-lg bg-primary/10">
+            <Server className="h-4 w-4 text-primary" />
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">System Health</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Live server status — refreshes every 10s
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => void refetch()}
+          disabled={isFetching}
+          className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
+          title="Refresh"
+        >
+          <RefreshCw className={cn("h-3.5 w-3.5", isFetching && "animate-spin")} />
+        </button>
+      </div>
+
+      {isLoading && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground py-4">
+          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+          Loading…
+        </div>
+      )}
+
+      {isError && (
+        <div className="flex items-center gap-2 text-xs text-no rounded-lg bg-no/10 px-3 py-2.5">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          Cannot reach the API server. Make sure the API Server workflow is running.
+        </div>
+      )}
+
+      {data && (
+        <>
+          <div>
+            <HealthRow
+              icon={CheckCircle2}
+              label="Status"
+              value={data.status === "ok" ? "Online" : data.status}
+              badge={data.status === "ok" ? "OK" : "ERROR"}
+              badgeOk={data.status === "ok"}
+            />
+            <HealthRow
+              icon={Clock}
+              label="Uptime"
+              value={data.uptime.human}
+            />
+            <HealthRow
+              icon={Database}
+              label="Database engine"
+              value={data.database.engine}
+              badge={data.database.engine === "better-sqlite3" ? "native" : "JS fallback"}
+              badgeOk={data.database.engine === "better-sqlite3"}
+            />
+            <HealthRow
+              icon={HardDrive}
+              label="Memory — heap"
+              value={`${data.memory.heap_used_mb} MB / ${data.memory.heap_total_mb} MB`}
+              badge={`${heapPct}%`}
+              badgeOk={heapPct < 80}
+            />
+            <HealthRow
+              icon={Cpu}
+              label="Memory — RSS"
+              value={`${data.memory.rss_mb} MB`}
+            />
+            <HealthRow
+              icon={Activity}
+              label="Scheduler"
+              value={data.scheduler.running
+                ? `Running · ${data.scheduler.scan_cycle_count} scan${data.scheduler.scan_cycle_count === 1 ? "" : "s"} completed`
+                : "Stopped"}
+              badge={data.scheduler.running ? "running" : "stopped"}
+              badgeOk={data.scheduler.running}
+            />
+            <HealthRow
+              icon={BarChart2}
+              label="Last scan"
+              value={lastScanLabel}
+            />
+            <HealthRow
+              icon={Zap}
+              label="Node.js version"
+              value={data.node_version}
+            />
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-3 text-right">
+            Last checked: {new Date(data.timestamp).toLocaleTimeString()}
+          </p>
+        </>
+      )}
     </div>
   );
 }
