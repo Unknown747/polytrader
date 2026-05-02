@@ -45,6 +45,7 @@ const DB_PATH = path.resolve(process.cwd(), "poly.db");
 // sql.js (pure JS/WASM, no compilation needed) is used transparently.
 
 let db: DbLike;
+export let dbEngine: "better-sqlite3" | "sql.js" = "better-sqlite3";
 
 try {
   const Database = _require("better-sqlite3") as typeof BetterSqlite3NS;
@@ -52,6 +53,7 @@ try {
   rawDb.pragma("journal_mode = WAL");
   rawDb.pragma("foreign_keys = ON");
   db = rawDb as unknown as DbLike;
+  dbEngine = "better-sqlite3";
   logger.info({ path: DB_PATH, engine: "better-sqlite3" }, "Database opened");
 } catch (nativeErr) {
   logger.warn(
@@ -63,6 +65,7 @@ try {
   const adapter = new SqlJsAdapter(DB_PATH, SQL);
   adapter.pragma("foreign_keys = ON");
   db = adapter;
+  dbEngine = "sql.js";
   logger.info({ path: DB_PATH, engine: "sql.js" }, "Database opened");
 }
 

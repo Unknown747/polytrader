@@ -3,8 +3,8 @@ import { HealthCheckResponse, GetWalletStatusResponse } from "@workspace/api-zod
 import { isTelegramConfigured } from "../services/telegram";
 import { isClobConfigured, getUsdcBalance, getWalletAddress } from "../services/clob";
 import { seedDemoData } from "../services/telegramBot";
-import db from "../lib/db";
-import { logger } from "../lib/db";
+import { getSchedulerStatus } from "../services/scheduler";
+import db, { logger, dbEngine } from "../lib/db";
 import { getNetworkMode, setNetworkMode } from "../lib/networkMode";
 
 const router: IRouter = Router();
@@ -21,6 +21,57 @@ const ALLOWED_KEYS = new Set([
 router.get("/healthz", (_req, res) => {
   res.json(HealthCheckResponse.parse({ status: "ok" }));
 });
+
+router.get("/health", (_req, res) => {
+  const mem = process.memoryUsage();
+  const scheduler = getSchedulerStatus();
+
+  res.json({
+    status: "ok",
+    uptime: {
+      seconds: Math.floor(process.uptime()),
+      human: formatUptime(process.uptime()),
+    },
+    database: {
+      engine: dbEngine,
+      path: "poly.db",
+    },
+    memory: {
+      rss_mb: toMb(mem.rss),
+      heap_used_mb: toMb(mem.heapUsed),
+      heap_total_mb: toMb(mem.heapTotal),
+    },
+    scheduler: {
+      running: scheduler.running,
+      scan_cycle_count: scheduler.scanCycleCount,
+      is_scanning: scheduler.isScanning,
+      last_scan_ago_seconds: scheduler.lastSuccessfulScanAgo,
+    },
+    integrations: {
+      polymarket_clob: isClobConfigured(),
+      telegram: isTelegramConfigured(),
+    },
+    node_version: process.version,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+function toMb(bytes: number): number {
+  return Math.round((bytes / 1024 / 1024) * 10) / 10;
+}
+
+function formatUptime(seconds: number): string {
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  const parts: string[] = [];
+  if (d > 0) parts.push(`${d}d`);
+  if (h > 0) parts.push(`${h}h`);
+  if (m > 0) parts.push(`${m}m`);
+  parts.push(`${s}s`);
+  return parts.join(" ");
+}
 
 router.get("/wallet/status", async (_req, res) => {
   const hasPrivateKey = Boolean(process.env.POLYMARKET_PRIVATE_KEY || db.prepare("SELECT value FROM app_credentials WHERE key = ?").get("POLYMARKET_PRIVATE_KEY"));

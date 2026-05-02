@@ -643,3 +643,19 @@ export function restartScheduler() {
 export function triggerManualScan(): void {
   void runScan();
 }
+
+export function getSchedulerStatus(): {
+  running: boolean;
+  scanCycleCount: number;
+  isScanning: boolean;
+  lastSuccessfulScanAt: number;
+  lastSuccessfulScanAgo: number;
+} {
+  return {
+    running: scanTimer !== null,
+    scanCycleCount,
+    isScanning,
+    lastSuccessfulScanAt,
+    lastSuccessfulScanAgo: Math.floor((Date.now() - lastSuccessfulScanAt) / 1000),
+  };
+}
