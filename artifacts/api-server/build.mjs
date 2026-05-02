@@ -22,91 +22,106 @@ async function buildAll() {
     outdir: distDir,
     outExtension: { ".js": ".mjs" },
     logLevel: "info",
-    // Some packages may not be bundleable, so we externalize them, we can add more here as needed.
-    // Some of the packages below may not be imported or installed, but we're adding them in case they are in the future.
-    // Examples of unbundleable packages:
-    // - uses native modules and loads them dynamically (e.g. sharp)
-    // - use path traversal to read files (e.g. @google-cloud/secret-manager loads sibling .proto files)
     external: [
+      // Native modules that cannot be bundled
       "*.node",
-      "sharp",
       "better-sqlite3",
       "sqlite3",
+      // sql.js ships with a WASM binary — keep it external so Node.js resolves
+      // it from node_modules at runtime (works on both x64 and ARM/Termux).
+      "sql.js",
+      // Image / graphics
+      "sharp",
       "canvas",
+      // Crypto / auth
       "bcrypt",
       "argon2",
+      // Platform-specific
       "fsevents",
       "re2",
       "farmhash",
       "xxhash-addon",
       "bufferutil",
       "utf-8-validate",
-      "ssh2",
       "cpu-features",
       "dtrace-provider",
+      "ssh2",
+      // Isolation / sandbox
       "isolated-vm",
       "lightningcss",
+      // Database clients
       "pg-native",
       "oracledb",
       "mongodb-client-encryption",
+      "mysql2",
+      "classic-level",
+      "leveldown",
+      "rocksdb",
+      "realm",
+      "odbc",
+      // Email / templates
       "nodemailer",
       "handlebars",
+      // ORMs / query builders
       "knex",
       "typeorm",
+      "sequelize",
+      // gRPC / protobuf
       "protobufjs",
+      "@grpc/*",
+      "grpc",
+      // ML / AI
       "onnxruntime-node",
       "@tensorflow/*",
-      "@prisma/client",
-      "@mikro-orm/*",
-      "@grpc/*",
-      "@swc/*",
+      // Cloud SDKs
       "@aws-sdk/*",
       "@azure/*",
-      "@opentelemetry/*",
       "@google-cloud/*",
       "@google/*",
       "googleapis",
       "firebase-admin",
-      "@parcel/watcher",
-      "@sentry/profiling-node",
-      "@tree-sitter/*",
       "aws-sdk",
-      "classic-level",
+      // Observability
+      "@opentelemetry/*",
+      "@sentry/profiling-node",
       "dd-trace",
-      "ffi-napi",
-      "grpc",
-      "hiredis",
-      "kerberos",
-      "leveldown",
-      "miniflare",
-      "mysql2",
       "newrelic",
-      "odbc",
-      "piscina",
-      "realm",
-      "ref-napi",
-      "rocksdb",
-      "sass-embedded",
-      "sequelize",
-      "serialport",
-      "snappy",
-      "tinypool",
-      "usb",
+      // ORM / Prisma
+      "@prisma/client",
+      "@mikro-orm/*",
+      // Workers / edge
+      "miniflare",
       "workerd",
       "wrangler",
+      "piscina",
+      "tinypool",
+      // Serial / USB
+      "serialport",
+      "usb",
+      // Other native / large
+      "snappy",
+      "hiredis",
+      "kerberos",
       "zeromq",
       "zeromq-prebuilt",
+      "ffi-napi",
+      "ref-napi",
+      "sass-embedded",
+      "@tree-sitter/*",
+      "@parcel/watcher",
+      // Browser automation
       "playwright",
       "puppeteer",
       "puppeteer-core",
       "electron",
+      // SWC
+      "@swc/*",
     ],
     sourcemap: "linked",
     plugins: [
-      // pino relies on workers to handle logging, instead of externalizing it we use a plugin to handle it
-      esbuildPluginPino({ transports: ["pino-pretty"] })
+      esbuildPluginPino({ transports: ["pino-pretty"] }),
     ],
-    // Make sure packages that are cjs only (e.g. express) but are bundled continue to work in our esm output file
+    // Ensure CJS-only packages (e.g. express) work inside our ESM output
     banner: {
       js: `import { createRequire as __bannerCrReq } from 'node:module';
 import __bannerPath from 'node:path';
@@ -115,7 +130,7 @@ import __bannerUrl from 'node:url';
 globalThis.require = __bannerCrReq(import.meta.url);
 globalThis.__filename = __bannerUrl.fileURLToPath(import.meta.url);
 globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
-    `,
+`,
     },
   });
 }

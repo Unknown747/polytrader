@@ -1,66 +1,66 @@
-# PolyTrader - Compressed Documentation
+# PolyTrader
 
 ## Overview
 
-PolyTrader is a full-stack trading dashboard designed for Polymarket, a prediction market built on the Polygon blockchain. Its primary purpose is to provide users with a comprehensive platform to monitor markets, manage portfolios, execute automated trading strategies, and analyze performance through a unified interface. The project aims to offer a robust and efficient solution for engaging with prediction markets, enhancing decision-making, and streamlining trading operations.
+Full-stack trading dashboard for Polymarket (prediction markets on Polygon). Provides live market browsing, portfolio tracking, automated strategy scanning, paper trading, Telegram bot notifications, and live order placement via the Polymarket CLOB API.
 
-## User Preferences
+## Architecture
 
-This project does not have explicit user preferences defined in the provided `replit.md` file.
+**pnpm monorepo** with two main artifacts:
 
-## System Architecture
+### API Server (`artifacts/api-server`)
+- Framework: Express.js 5, TypeScript
+- Build: esbuild → `dist/index.mjs`
+- Port: 8080
+- Database: SQLite via `better-sqlite3` (Linux/VPS, native) **or** `sql.js` (Termux/Android, pure JS — auto-detected at startup)
+- DB file: `artifacts/api-server/poly.db`
+- Key services: `strategy.ts`, `autoTrader.ts`, `paperTrader.ts`, `polymarket.ts`, `clob.ts`, `telegram.ts`, `telegramBot.ts`, `scheduler.ts`
+- Key lib: `db.ts` (SQLite init + schema), `db-adapter.ts` (sql.js compatibility layer), `state.ts` (in-memory state + DB sync)
 
-The project is structured as a `pnpm monorepo`.
+### Frontend (`artifacts/polymarket-trader`)
+- Framework: React 18, Vite 7, Tailwind CSS 4, shadcn/ui
+- Port: 5000
+- Proxies `/api` → `localhost:8080`
 
-**API Server (`artifacts/api-server`)**
--   **Framework**: Express.js with TypeScript.
--   **Build System**: `esbuild`, outputting to `dist/index.mjs`.
--   **Database**: SQLite using `better-sqlite3`, storing data in `polytrader.db`.
--   **Port**: 8080.
--   **Key Services**:
-    -   `strategy.ts`: Handles scanning, scoring, and configuration management.
-    -   `scheduler.ts`: Manages cron jobs, auto-compounding, and balance alerts.
-    -   `autoTrader.ts`: The core auto-execution engine.
-    -   `paperTrader.ts`: Provides paper trading simulation and analytics.
-    -   `polymarket.ts`: Client for the Gamma API.
-    -   `clob.ts`: Client for the CLOB API (order execution).
-    -   `telegram.ts`: Service for Telegram bot integration.
+### Shared libraries
+- `lib/api-zod`: Zod schemas + OpenAPI spec
+- `lib/api-client-react`: Auto-generated typed fetch client
 
-**Frontend (`artifacts/polymarket-trader`)**
--   **Framework**: React 18 with Vite.
--   **Styling**: Tailwind CSS and shadcn/ui.
--   **State Management**: TanStack Query v5.
--   **Routing**: Wouter.
--   **Port**: 5000.
--   **UI/UX Decisions**: The dashboard focuses on providing a clear and comprehensive overview of trading activities. Features include interactive P&L charts, detailed market listings with filtering, a strategy scanner with composite scoring, and dedicated sections for performance analytics, open positions, and order history. The design emphasizes intuitive navigation and data visualization for effective decision-making.
--   **Key Features**:
-    -   **Dashboard**: Portfolio summary, P&L charts, open positions, quick stats.
-    -   **Markets**: Active Polymarket listings with filters, watchlist, and price alerts.
-    -   **Strategy Scanner**: Automated market scanning based on composite scoring, with a Kelly Calculator widget and one-click manual execution.
-    -   **Auto-Trading Bot**: Configurable execution parameters, emergency stop, volatility checks, cooldown mechanisms, risk management, and order recovery.
-    -   **Paper Trading Mode**: Simulated trading with separate bankroll, slippage, and fee simulations.
-    -   **Performance Analytics**: In-depth analysis of trading performance including win rates, P&L, and trade history.
-    -   **Resolution Tracker**: Monitors markets resolving soon.
-    -   **Telegram Bot**: Provides control and alerts via Telegram commands.
-    -   **Mainnet Preflight Checklist**: Validates conditions for live trading.
-    -   **Auto-Compound**: Reinvests profits into the bankroll.
-    -   **Balance Low Alert**: Notifies users of low account balances.
--   **Composite Scoring Algorithm**: Evaluates trading opportunities based on a weighted sum of edge, volume, liquidity, and timing scores.
--   **Kelly Criterion**: Utilizes fractional Kelly for optimal position sizing and conservative risk management.
+## Database Strategy
 
-## External Dependencies
+`artifacts/api-server/src/lib/db.ts` tries to load `better-sqlite3` (native, fast) and falls back to `sql.js` (pure JS/WASM, no compilation). The `db-adapter.ts` wraps sql.js with a better-sqlite3-compatible API (named params, transactions, pragmas). Both engines use the same `poly.db` file.
 
--   **Polymarket**: The primary prediction market platform.
--   **Polymarket CLOB API**: Used for automated order execution.
--   **Polygon Blockchain**: The underlying blockchain for Polymarket.
--   **MetaMask**: Recommended wallet for Polygon network interaction.
--   **Telegram**: For bot control and notifications.
--   **SQLite**: Database for the API server (`better-sqlite3`).
--   **Express.js**: Backend framework.
--   **React**: Frontend library.
--   **Vite**: Frontend build tool.
--   **Tailwind CSS**: Utility-first CSS framework.
--   **shadcn/ui**: UI component library.
--   **TanStack Query**: Data fetching and state management.
--   **Wouter**: Frontend routing.
--   **esbuild**: Backend build tool.
+## Install Scripts
+
+Two clean install scripts at the repo root:
+- `install-linux.sh` — Ubuntu/Debian/CentOS/Arch VPS
+- `install-termux.sh` — Termux (Android), patches ARM64 esbuild overrides, handles better-sqlite3 fallback
+
+## Workflows
+
+- **API Server**: `cd artifacts/api-server && pnpm run build && PORT=8080 node --enable-source-maps ./dist/index.mjs`
+- **Frontend**: `PORT=5000 BASE_PATH=/ pnpm --filter @workspace/polymarket-trader run dev`
+
+## External Integrations
+
+All credentials stored in SQLite `app_credentials` table (also readable from env vars):
+- Polymarket CLOB: `POLYMARKET_PRIVATE_KEY`, `POLYMARKET_API_KEY`, `POLYMARKET_API_SECRET`, `POLYMARKET_API_PASSPHRASE`
+- Telegram: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
+
+## Key Files
+
+| File | Purpose |
+|---|---|
+| `artifacts/api-server/src/lib/db.ts` | SQLite init, schema, engine auto-detection |
+| `artifacts/api-server/src/lib/db-adapter.ts` | sql.js wrapper (better-sqlite3 API compat) |
+| `artifacts/api-server/src/lib/state.ts` | Portfolio state, DB persistence |
+| `artifacts/api-server/src/services/strategy.ts` | Opportunity scanner + config |
+| `artifacts/api-server/src/services/autoTrader.ts` | Auto-trading engine |
+| `artifacts/api-server/src/services/paperTrader.ts` | Paper trading simulation |
+| `artifacts/api-server/src/services/clob.ts` | Polymarket CLOB API client |
+| `artifacts/api-server/src/services/telegram.ts` | Telegram notification helpers |
+| `artifacts/api-server/src/services/telegramBot.ts` | Telegram bot command handler |
+| `artifacts/api-server/build.mjs` | esbuild bundler config |
+| `install-linux.sh` | VPS/Linux installer |
+| `install-termux.sh` | Termux (Android) installer |
+| `README.md` | Complete user documentation |

@@ -1,431 +1,338 @@
 # PolyTrader
 
-Dashboard trading lengkap untuk Polymarket prediction market di Polygon mainnet. Dilengkapi data pasar live, strategy scanner otomatis, backtester realistis, Telegram bot 16 perintah, auto-trading bot, dan panel manajemen risiko portofolio.
+A full-stack trading dashboard and automation bot for [Polymarket](https://polymarket.com). Supports manual trading, strategy scanning, paper trading, Telegram notifications, and automated order placement.
 
 ---
 
-## Fitur Utama
+## Features
 
-| Halaman | Deskripsi |
-|---|---|
-| **Dashboard** | Ringkasan portofolio, **panel Portfolio Risk Score** (0–100: konsentrasi HHI + urgensi resolusi + drawdown), chart P&L kumulatif, pasar trending |
-| **Markets** | Daftar pasar Polymarket — data live dari Gamma API dengan fallback demo otomatis, filter kategori/status/search, tombol watchlist |
-| **Market Detail** | Info pasar, form order beli/jual YES/NO, **chart harga 30 hari**, **bintang watchlist**, **bel price alert** (notifikasi Telegram saat harga target tercapai) |
-| **Positions** | Posisi terbuka dengan unrealized P&L, **harga live via SSE** (push 15 detik), badge LIVE, Export CSV |
-| **Orders** | Riwayat order, cancel order, ringkasan statistik, Export CSV |
-| **Portfolio** | Chart P&L kumulatif, chart P&L harian, pie chart alokasi, panel **live CLOB P&L** (data nyata dari Polymarket), Export CSV P&L + posisi |
-| **Strategy** | Scanner peluang: skor komposit 5 faktor, **filter tren harga** (badge naik/turun/flat dari regresi linear 14 hari), sizing half-Kelly |
-| **Backtest** | Simulasi historis realistis: 30 template pasar, **fee taker CLOB 1%**, **simulasi bid-ask spread** (0.3–2.5% per tier likuiditas), equity curve, trade log |
-| **Correlation** | Heatmap korelasi Pearson antar pasar di watchlist, jendela 7–90 hari, peringatan konsentrasi risiko |
-| **Settings** | **Wizard setup 3 langkah** (Private Key → API Credentials → Telegram), **slider Stop-Loss** (10–20%, auto-eksekusi), **slider Take-Profit tiered** (3 tier), toggle filter tren, panel status auto-trading |
+- **Live market browser** — browse and search Polymarket prediction markets in real-time
+- **Portfolio tracking** — track open positions, P&L history, and equity curve
+- **Strategy scanner** — configurable edge detection based on probability, liquidity, volume, and time-to-resolution
+- **Auto-trader** — automated order placement with configurable risk controls (stop-loss, take-profit tiers, drawdown limits)
+- **Paper trading** — full simulation mode with virtual bankroll to test strategies without real money
+- **Telegram bot** — full trading control and notifications via Telegram commands
+- **Watchlist & price alerts** — monitor markets and get notified when prices hit your targets
+- **Credentials vault** — store API keys securely in the local SQLite database (never in source code)
 
 ---
 
-## Arsitektur
+## Architecture
 
 ```
 polytrader/
 ├── artifacts/
-│   ├── api-server/               # Backend Express (PORT=8080, serve /api)
-│   │   └── src/
-│   │       ├── routes/           # 5 file route (sistem, pasar, portofolio, notifikasi, trading)
-│   │       ├── services/         # Polymarket, Strategy+Backtest, CLOB, AutoTrader, Scheduler, Telegram
-│   │       └── lib/              # SQLite (db.ts) + portfolio state (state.ts)
-│   └── polymarket-trader/        # Frontend React + Vite (PORT=5000, serve /)
+│   ├── api-server/          Express.js + TypeScript backend (port 8080)
+│   │   ├── src/
+│   │   │   ├── lib/
+│   │   │   │   ├── db.ts           SQLite init (better-sqlite3 / sql.js fallback)
+│   │   │   │   ├── db-adapter.ts   sql.js compatibility adapter
+│   │   │   │   └── state.ts        In-memory portfolio state + DB sync
+│   │   │   ├── routes/             REST API route handlers
+│   │   │   └── services/           Strategy, auto-trader, Polymarket, Telegram
+│   │   └── build.mjs               esbuild bundler config
+│   └── polymarket-trader/   React 18 + Vite + Tailwind frontend (port 5000)
 │       └── src/
-│           ├── pages/            # Halaman UI (Dashboard, Markets, Positions, dll.)
-│           ├── components/       # Layout, shadcn/ui components
-│           └── hooks/            # usePriceStream + useToast (index.ts)
-├── lib/
-│   ├── api-spec/                 # OpenAPI 3.1 spec (sumber kebenaran API contract)
-│   ├── api-client-react/         # Generated React Query hooks (jangan edit manual)
-│   └── api-zod/                  # Generated Zod schemas (jangan edit manual)
-└── scripts/
+│           ├── pages/              Dashboard, Portfolio, Markets, Settings, etc.
+│           └── components/         Shared UI components (shadcn/ui)
+└── lib/
+    ├── api-client-react/    Auto-generated typed API client
+    └── api-zod/             Shared Zod schemas and OpenAPI spec
 ```
 
-### Route Files (Backend)
-
-| File | Isi |
-|---|---|
-| `routes/system.ts` | Health check, wallet status, demo reset, credentials |
-| `routes/markets.ts` | Daftar pasar, trending, detail, histori harga, korelasi watchlist |
-| `routes/portfolio.ts` | Posisi, order, ringkasan, live CLOB, export CSV, **risk score** |
-| `routes/notifications.ts` | Telegram test, watchlist CRUD, price alerts CRUD |
-| `routes/trading.ts` | Strategy scanner, auto-trader, SSE price stream (`/prices/stream`) |
-
-### Services (Backend)
-
-| File | Tanggung Jawab |
-|---|---|
-| `services/polymarket.ts` | Gamma API client — cache 5 menit, retry 3×, fetch hingga 1.000 pasar |
-| `services/strategy.ts` | Skor komposit 5 faktor + half-Kelly + config SQLite + **engine backtest** (merged) |
-| `services/clob.ts` | CLOB API client — EIP-712 signing, HMAC-SHA256 auth, place order, live P&L |
-| `services/autoTrader.ts` | Auto-trading engine — riwayat di SQLite, Kelly sizing, satu trade per pasar/hari |
-| `services/scheduler.ts` | Cron setiap N menit: update harga, scan, alert Telegram, auto-trade, daily report |
-| `services/telegram.ts` | Kirim notifikasi Telegram: alert peluang, laporan harian, test message |
-| `services/telegramBot.ts` | Long-polling bot 16 perintah, rate limiting, inline keyboard konfirmasi |
+**Database:** SQLite via `better-sqlite3` on Linux/VPS (fast, native). On Termux/Android where native compilation is unavailable, the app automatically falls back to `sql.js` (pure JS/WASM, no compilation required). The same database file (`poly.db`) is used by both engines.
 
 ---
 
-## Instalasi
+## Prerequisites
 
-### Prasyarat
+| Requirement | Linux / VPS | Termux (Android) |
+|---|---|---|
+| Node.js | >= 18 | installed via `pkg` |
+| pnpm | any recent version | any recent version |
+| Python 3 + make + C++ | for `better-sqlite3` build | installed via `pkg` |
 
-- Node.js >= 20
-- pnpm >= 9 — install dengan `npm install -g pnpm`
+---
 
-### Clone dan install dependencies
+## Installation
+
+### Linux / VPS (Ubuntu, Debian, CentOS, Arch …)
 
 ```bash
-git clone https://github.com/Unknown747/polytrader.git
+git clone <repo-url> polytrader
 cd polytrader
-pnpm install
+bash install-linux.sh
 ```
+
+The script will:
+1. Check / install Node.js and pnpm
+2. Install build tools (Python 3, make, g++)
+3. Run `pnpm install` (builds `better-sqlite3` native module)
+4. Build the API server
+5. Create `start.sh`
+
+Start the app:
+```bash
+bash start.sh
+```
+
+Custom ports:
+```bash
+PORT=9090 FRONTEND_PORT=3000 bash start.sh
+```
+
+### Termux (Android)
+
+```bash
+git clone <repo-url> polytrader
+cd polytrader
+bash install-termux.sh
+```
+
+The script will:
+1. Install required Termux packages (`nodejs`, `python`, `make`, `clang`)
+2. Install pnpm
+3. Temporarily patch `pnpm-workspace.yaml` so the correct ARM binary for esbuild is downloaded
+4. Run `pnpm install` (with automatic fallback if `better-sqlite3` fails to compile)
+5. Build the API server
+6. Create `start.sh` and `stop.sh`
+
+Start the app:
+```bash
+bash start.sh
+```
+
+Stop the app:
+```bash
+bash stop.sh
+```
+
+> **Note on the database:** If `better-sqlite3` cannot be compiled on Termux, the API server transparently switches to `sql.js` (pure JS SQLite). There is no data loss, no manual intervention needed, and performance is identical for this workload.
 
 ---
 
-## Menjalankan Aplikasi
+## Running the App (manual)
 
-### Cara cepat (Replit)
-
-Di Replit, semua sudah dikonfigurasi sebagai Workflows. Aktifkan dua workflow:
-
-- **API Server** — `PORT=8080 pnpm --filter @workspace/api-server run dev`
-- **Frontend** — `PORT=5000 BASE_PATH=/ pnpm --filter @workspace/polymarket-trader run dev`
-
-### Cara manual (lokal)
-
-Jalankan dua terminal secara bersamaan:
-
-**Terminal 1 — Backend API:**
 ```bash
-PORT=8080 pnpm --filter @workspace/api-server run dev
-```
+# Terminal 1 — API server
+cd artifacts/api-server
+PORT=8080 node --enable-source-maps ./dist/index.mjs
 
-**Terminal 2 — Frontend:**
-```bash
+# Terminal 2 — Frontend dev server
 PORT=5000 BASE_PATH=/ pnpm --filter @workspace/polymarket-trader run dev
 ```
 
-Buka browser di `http://localhost:5000`.
+Open [http://localhost:5000](http://localhost:5000) in your browser.
 
 ---
 
-## Scripts Lengkap
+## Configuration
 
-### Root workspace
+All credentials are stored in the local SQLite database (`artifacts/api-server/poly.db`) via the **Settings** page in the UI. Environment variables can also be used as an alternative.
 
-```bash
-pnpm run typecheck        # Typecheck semua packages
-pnpm run typecheck:libs   # Typecheck shared libraries saja
-pnpm run build            # Build semua artifacts
-```
+### Polymarket CLOB API (live trading)
 
-### API Server
-
-```bash
-PORT=8080 pnpm --filter @workspace/api-server run dev       # Dev mode (build + run)
-pnpm --filter @workspace/api-server run build               # Build saja
-PORT=8080 pnpm --filter @workspace/api-server run start     # Jalankan build
-pnpm --filter @workspace/api-server run typecheck           # Typecheck saja
-```
-
-### Frontend
-
-```bash
-pnpm --filter @workspace/polymarket-trader run dev          # Dev server + HMR
-pnpm --filter @workspace/polymarket-trader run build        # Build production
-pnpm --filter @workspace/polymarket-trader run typecheck    # Typecheck saja
-```
-
-### API Codegen
-
-Jalankan setiap kali mengubah `lib/api-spec/openapi.yaml`:
-
-```bash
-pnpm --filter @workspace/api-spec run codegen
-```
-
-Perintah ini generate ulang: React Query hooks di `lib/api-client-react/` dan Zod schemas di `lib/api-zod/`.
-
----
-
-## Environment Variables
-
-### Wajib
-
-| Variable | Keterangan |
-|---|---|
-| `PORT` | Port untuk API server (Replit set otomatis ke 8080) |
-
-### Opsional — Live trading Polymarket
-
-| Variable | Cara mendapatkan |
-|---|---|
-| `POLYMARKET_PRIVATE_KEY` | Private key wallet Polygon kamu |
-| `POLYMARKET_API_KEY` | [polymarket.com](https://polymarket.com) → Account → API Keys |
-| `POLYMARKET_API_SECRET` | Sama seperti di atas |
-| `POLYMARKET_API_PASSPHRASE` | Sama seperti di atas |
-
-### Opsional — Telegram
-
-| Variable | Cara mendapatkan |
-|---|---|
-| `TELEGRAM_BOT_TOKEN` | Chat ke `@BotFather` → `/newbot` |
-| `TELEGRAM_CHAT_ID` | Kirim pesan ke bot, buka `api.telegram.org/bot<TOKEN>/getUpdates`, ambil `chat.id` |
-
-> Di Replit: set semua variable di **Secrets** (ikon kunci di sidebar). Bisa juga disimpan via Telegram bot dengan `/setcred`.
-
----
-
-## Cara Setup Telegram Bot
-
-1. Buka Telegram, cari `@BotFather`
-2. Kirim `/newbot` dan ikuti instruksi
-3. Copy **Bot Token**
-4. Kirim pesan sembarang ke bot baru kamu
-5. Buka `https://api.telegram.org/bot<TOKEN>/getUpdates`
-6. Copy nilai `chat.id` dari response JSON
-7. Set `TELEGRAM_BOT_TOKEN` dan `TELEGRAM_CHAT_ID` di Secrets
-8. Buka **Settings** → klik **Send Test Message** untuk verifikasi
-
-### Perintah Telegram Bot (16 perintah)
-
-| Perintah | Fungsi |
-|---|---|
-| `/balance` | Total nilai portofolio, ringkasan P&L, saldo USDC live |
-| `/positions` | Semua posisi terbuka dengan P&L per posisi |
-| `/orders` | 10 order terakhir dengan status fill |
-| `/cancel <id>` | Cancel order dengan konfirmasi inline keyboard |
-| `/pnl` | Riwayat P&L 14 hari terakhir + total kumulatif |
-| `/config` | Lihat semua pengaturan strategi; update dengan `/config <key> <value>` |
-| `/markets <kata>` | Cari pasar Polymarket berdasarkan kata kunci |
-| `/scan` | Trigger scan strategi manual (cooldown 60 detik) |
-| `/status` | Status auto-trader: trade hari ini, sisa slot, waktu scan/trade terakhir |
-| `/creds` | Status semua kredensial yang sudah dikonfigurasi |
-| `/watch <marketId>` | Tambah pasar ke watchlist |
-| `/unwatch <marketId>` | Hapus pasar dari watchlist |
-| `/watchlist` | Lihat semua pasar di watchlist dengan harga live |
-| `/alert <id> <yes\|no> <above\|below> <harga%>` | Set price alert, misal: `/alert mkt-001 yes above 90` |
-| `/alerts` | Lihat semua price alert (aktif dan sudah terpicu) |
-| `/delalert <id>` | Hapus price alert |
-| `/setcred <type> <value>` | Simpan kredensial ke DB (type: `privatekey`, `apikey`, `apisecret`, `apipassphrase`, `chatid`) |
-| `/resetdemo` | Reset data portofolio ke nilai demo awal |
-| `/help` | Daftar semua perintah |
-
----
-
-## Cara Setup Live Trading
-
-1. Siapkan wallet Polygon yang sudah ada USDC-nya
-2. Login ke [polymarket.com](https://polymarket.com)
-3. Masuk ke **Account → API Keys** → buat API key baru
-4. Catat `API Key`, `Secret`, dan `Passphrase`
-5. Export private key dari MetaMask: **Settings → Security → Export Private Key**
-6. Set 4 variable di Secrets:
-   - `POLYMARKET_PRIVATE_KEY`
-   - `POLYMARKET_API_KEY`
-   - `POLYMARKET_API_SECRET`
-   - `POLYMARKET_API_PASSPHRASE`
-7. Restart server — badge di sidebar berubah dari **DEMO** ke **LIVE**
-
-### Alur Penandatanganan Order
-
-```
-1. EIP-712 typed-data signature menggunakan POLYMARKET_PRIVATE_KEY (ethers.js Wallet)
-2. L2 HMAC-SHA256 header (POLY_SIGNATURE): timestamp + METHOD + path + body
-3. Order dikirim ke https://clob.polymarket.com/order sebagai GTC limit order
-```
-
----
-
-## Strategi Trading
-
-### Near-Resolution High-Probability Strategy
-
-Scanner mencari pasar yang memenuhi semua kriteria ini (bisa dikonfigurasi di Settings):
-
-| Parameter | Default | Keterangan |
+| Setting | Env var | Description |
 |---|---|---|
-| Min probabilitas | 80% | Harga YES atau NO minimal 80¢ |
-| Max hari ke resolusi | 21 hari | Pasar yang hampir selesai |
-| Min volume 24h | $500 | Filter likuiditas |
-| Min likuiditas | $1.000 | Filter depth order book |
-| Min edge | 3% | Selisih harga vs estimasi fair value |
+| Private Key | `POLYMARKET_PRIVATE_KEY` | Ethereum private key (0x…) for signing orders |
+| API Key | `POLYMARKET_API_KEY` | Polymarket CLOB API key |
+| API Secret | `POLYMARKET_API_SECRET` | CLOB API secret |
+| Passphrase | `POLYMARKET_API_PASSPHRASE` | CLOB API passphrase |
 
-### Skor Komposit (5 Faktor)
+To get Polymarket API credentials: visit [https://polymarket.com](https://polymarket.com) → Profile → API Keys.
 
-| Faktor | Bobot |
-|---|---|
-| Edge (selisih harga vs fair value) | 35% |
-| Expected return | 20% |
-| Urgensi waktu (mendekati resolusi) | 20% |
-| Likuiditas | 15% |
-| Volume 24 jam | 10% |
+### Telegram Bot (optional, for notifications and remote control)
 
-### Ukuran Posisi (Half-Kelly Criterion)
-
-```
-Kelly fraction  = (p_estimasi - harga_pasar) / (1 - harga_pasar)
-Half-Kelly      = Kelly / 2
-Posisi          = min(Half-Kelly, maxPositionPct) × bankroll
-```
-
-Contoh: YES di 82¢, estimasi fair value 88¢, bankroll $1.000, max posisi 5%:
-- Full Kelly = (0.88 − 0.82) / (1 − 0.82) = 33%
-- Half-Kelly = 16.5% → dikap ke 5% = **$50 per trade**
-
-### Filter Tren Harga
-
-Scanner melakukan regresi linear 14 hari pada data harga. Badge pada setiap peluang:
-- 🟢 **Naik** — slope positif (harga YES sedang naik)
-- 🟡 **Flat** — slope mendekati nol
-- 🔴 **Turun** — slope negatif (pertimbangkan untuk skip)
-
----
-
-## Manajemen Risiko
-
-### Stop-Loss
-
-Dikonfigurasi di Settings → tab Risk Management:
-
-| Pengaturan | Keterangan |
-|---|---|
-| **Stop-Loss %** | Tutup posisi jika unrealized loss melebihi X% dari nilai awal (10–20%) |
-| **Auto-Eksekusi** | Jika aktif, sistem otomatis menutup posisi tanpa perlu konfirmasi manual |
-
-### Take-Profit (3 Tier)
-
-| Tier | Kapan Terpicu | Aksi |
+| Setting | Env var | Description |
 |---|---|---|
-| **Tier 1 — Recover Capital** | Harga mencapai titik impas | Jual sebagian untuk menutup modal awal |
-| **Tier 2 — Lock Profit** | Harga melewati Tier 1 | Jual 50% posisi yang tersisa |
-| **Tier 3 — Full Close** | Harga mendekati 95–98¢ | Tutup seluruh posisi |
+| Bot Token | `TELEGRAM_BOT_TOKEN` | Token from [@BotFather](https://t.me/botfather) |
+| Chat ID | `TELEGRAM_CHAT_ID` | Your Telegram chat ID (use [@userinfobot](https://t.me/userinfobot)) |
 
-### Portfolio Risk Score Panel (Dashboard)
+### Strategy Settings (configurable via UI)
 
-Panel di Dashboard menghitung skor risiko komposit 0–100 secara live (refresh 30 detik):
-
-| Komponen | Maks | Cara Hitung |
+| Parameter | Default | Description |
 |---|---|---|
-| **Konsentrasi** | 40 poin | Herfindahl–Hirschman Index (HHI) dari nilai posisi — makin terdiversifikasi, makin rendah |
-| **Urgensi Resolusi** | 30 poin | % nilai portofolio di posisi yang resolusi ≤7 hari |
-| **Drawdown** | 30 poin | Penurunan P&L kumulatif dari puncak, relatif terhadap bankroll |
-
-Label: **Healthy** (0–33) · **Moderate** (34–66) · **Elevated** (67–100)
-
----
-
-## Database SQLite (`poly.db`)
-
-| Tabel | Isi |
-|---|---|
-| `portfolio_orders` | Semua order (demo + live) |
-| `portfolio_positions` | Posisi terbuka dengan harga live |
-| `portfolio_pnl` | P&L harian dan kumulatif |
-| `bot_state` | `lastUpdateId` Telegram bot (anti-replay) |
-| `strategy_config` | Konfigurasi strategi (bertahan saat restart) |
-| `auto_trade_history` | Semua auto-trade dengan status sukses/error |
-| `market_watchlist` | Pasar yang di-watch user |
-| `price_alerts` | Price alert per pasar (aktif dan sudah terpicu) |
-| `app_credentials` | Kredensial yang disimpan via `/setcred` |
-| `position_risk_events` | Log event stop-loss dan take-profit yang terpicu |
+| Min Edge | 10% | Minimum probability edge over market price |
+| Min Liquidity | $1,000 | Minimum market liquidity |
+| Min Volume 24h | $500 | Minimum 24h trading volume |
+| Max Days to Resolution | 30 | Maximum days until market resolves |
+| Max Position Size | $50 | Maximum bet size per market |
+| Bankroll | $1,000 | Total capital allocated |
+| Scan Interval | 5 min | How often to scan for opportunities |
+| Stop-Loss | 30% | Exit position at this % loss |
+| Take-Profit Tier 1 | 50% gain | Recover capital at this target |
+| Take-Profit Tier 2 | 75% gain | Sell half remaining at this target |
+| Take-Profit Tier 3 | 90% gain | Close full position at this target |
+| Daily Loss Limit | 10% | Pause trading for the day if this is hit |
+| Max Consecutive Losses | 3 | Cool down 30 min after N consecutive losses |
 
 ---
 
 ## API Endpoints
 
-| Method | Path | Deskripsi |
+All endpoints are prefixed with `/api`.
+
+### Markets
+| Method | Path | Description |
 |---|---|---|
-| GET | `/api/healthz` | Health check server |
-| GET | `/api/markets` | Daftar/cari pasar |
-| GET | `/api/markets/trending` | 5 pasar trending berdasarkan volume 24h |
-| GET | `/api/markets/:id` | Detail pasar |
-| GET | `/api/markets/:id/history` | Histori harga N hari (`?days=7–90`) |
-| GET | `/api/watchlist/correlation` | Matriks korelasi Pearson pasar di watchlist |
-| GET | `/api/positions` | Posisi terbuka |
-| GET | `/api/orders` | Daftar order |
-| POST | `/api/orders` | Pasang order baru |
-| DELETE | `/api/orders/:id` | Cancel order |
-| GET | `/api/portfolio/summary` | Ringkasan portofolio |
-| GET | `/api/portfolio/pnl` | Riwayat P&L dari SQLite |
-| GET | `/api/portfolio/live` | Live P&L dari CLOB Polymarket |
-| GET | `/api/portfolio/export` | Export CSV (`?type=orders\|positions\|pnl`) |
-| GET | `/api/portfolio/risk` | Skor risiko komposit 0–100 |
-| GET | `/api/wallet/status` | Status koneksi wallet + saldo USDC |
-| GET | `/api/watchlist` | Daftar watchlist |
-| POST | `/api/watchlist` | Tambah ke watchlist |
-| DELETE | `/api/watchlist/:marketId` | Hapus dari watchlist |
-| GET | `/api/alerts` | Daftar price alerts |
-| POST | `/api/alerts` | Buat price alert baru |
-| DELETE | `/api/alerts/:id` | Hapus price alert |
-| POST | `/api/telegram/test` | Kirim test message Telegram |
-| GET | `/api/strategy/opportunities` | Hasil scan peluang |
-| GET | `/api/strategy/config` | Baca konfigurasi strategi |
-| PUT | `/api/strategy/config` | Update konfigurasi strategi |
-| POST | `/api/strategy/backtest` | Jalankan simulasi backtest |
-| GET | `/api/auto-trading/status` | Status auto-trader + saldo + trade terbaru |
-| GET | `/api/auto-trading/history` | Riwayat lengkap auto-trade |
-| POST | `/api/auto-trading/trigger` | Trigger scan + eksekusi manual |
-| GET | `/api/prices/stream` | SSE stream harga live (push 15 detik) |
-| POST | `/api/demo/reset` | Reset data demo |
-| POST | `/api/credentials` | Simpan kredensial ke DB |
+| GET | `/api/markets` | Fetch live Polymarket markets |
+
+### Portfolio
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/portfolio` | Full portfolio snapshot (orders, positions, P&L, stats) |
+| POST | `/api/portfolio/orders` | Add a manual order |
+| PATCH | `/api/portfolio/orders/:id` | Update order status |
+| DELETE | `/api/portfolio/reset` | Reset portfolio to demo data |
+
+### Strategy
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/strategy/opportunities` | Scan for trading opportunities |
+| GET | `/api/strategy/config` | Get current strategy config |
+| POST | `/api/strategy/config` | Update strategy config |
+
+### Auto-trader
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/auto-trader/status` | Get auto-trader state and stats |
+| POST | `/api/auto-trader/start` | Start auto-trading |
+| POST | `/api/auto-trader/stop` | Stop auto-trading |
+| GET | `/api/auto-trader/history` | Trade history |
+
+### Paper Trading
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/paper-trader/status` | Paper portfolio status |
+| POST | `/api/paper-trader/start` | Start paper trading |
+| POST | `/api/paper-trader/stop` | Stop paper trading |
+| POST | `/api/paper-trader/reset` | Reset paper portfolio |
+
+### Credentials
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/credentials` | List configured credential keys |
+| POST | `/api/credentials` | Save a credential |
+| DELETE | `/api/credentials/:key` | Remove a credential |
+| GET | `/api/credentials/status` | Check which integrations are configured |
+
+### Watchlist & Alerts
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/watchlist` | Get watchlist |
+| POST | `/api/watchlist` | Add market to watchlist |
+| DELETE | `/api/watchlist/:id` | Remove from watchlist |
+| GET | `/api/alerts` | Get price alerts |
+| POST | `/api/alerts` | Create price alert |
+| DELETE | `/api/alerts/:id` | Delete alert |
+
+### Telegram
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/telegram/test` | Send a test message |
+| GET | `/api/telegram/status` | Check bot status |
+| POST | `/api/telegram/start-bot` | Start Telegram bot polling |
+| POST | `/api/telegram/stop-bot` | Stop Telegram bot |
+
+### CLOB (Live Trading)
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/clob/status` | Check if CLOB is configured |
+| POST | `/api/clob/order` | Place a live order |
+| GET | `/api/clob/trades` | Get filled trades |
+| GET | `/api/clob/positions` | Get live positions |
+| GET | `/api/clob/orders` | Get open orders |
+| DELETE | `/api/clob/orders/:id` | Cancel an order |
+| POST | `/api/clob/emergency-stop` | Cancel all open orders |
+
+### Equity
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/equity` | Equity curve and drawdown data |
 
 ---
 
-## Mengubah API Contract
+## Telegram Bot Commands
 
-```
-Edit lib/api-spec/openapi.yaml
-      ↓
-pnpm --filter @workspace/api-spec run codegen
-      ↓
-Implement endpoint di artifacts/api-server/src/routes/
-      ↓
-Gunakan generated hook di frontend (useGetXxx, useMutateXxx)
-```
+Once the bot is configured and started, these commands are available:
 
-Jangan edit file di `lib/api-client-react/` atau `lib/api-zod/` secara manual.
+| Command | Description |
+|---|---|
+| `/start` or `/help` | Show all commands |
+| `/status` | Bot and trading status |
+| `/balance` | USDC balance on Polymarket |
+| `/positions` | Open positions with P&L |
+| `/orders` | Open orders |
+| `/pnl` | P&L summary |
+| `/markets` | Top market opportunities |
+| `/scan` | Run a fresh strategy scan |
+| `/config` | Show current strategy config |
+| `/creds` | Show which credentials are set |
+| `/setcred KEY VALUE` | Set a credential (e.g. `/setcred TELEGRAM_CHAT_ID 123456`) |
+| `/watchlist` | Show watchlist |
+| `/watch MARKET_ID` | Add market to watchlist |
+| `/unwatch MARKET_ID` | Remove from watchlist |
+| `/alert MARKET_ID YES above 0.75` | Create a price alert |
+| `/alerts` | List active alerts |
+| `/delalert ID` | Delete an alert |
+| `/resetdemo` | Reset portfolio to demo data |
+| `/emergencystop` | Cancel all open orders immediately |
+| `/resume` | Resume after emergency stop |
 
 ---
 
 ## Troubleshooting
 
-**API tidak merespons:**
+### better-sqlite3 fails to load on Termux
+This is expected. The app uses `sql.js` (pure JS SQLite) as a fallback automatically. You will see this log line at startup:
+```
+better-sqlite3 unavailable — falling back to sql.js (Termux / no-native mode)
+```
+No action needed. The app works fully with sql.js.
+
+### API server fails to start
+Check the API log:
 ```bash
-curl http://localhost:8080/api/healthz
+# If using start.sh on Termux
+cat logs/api.log
+
+# Or run directly to see errors in terminal
+cd artifacts/api-server
+node --enable-source-maps ./dist/index.mjs
 ```
 
-**Typecheck error setelah edit `openapi.yaml`:**
+### Frontend shows "Failed to fetch" or API errors
+Make sure the API server is running on port 8080 (or whatever `PORT` you set). The frontend proxies `/api` to `localhost:8080` via Vite's dev proxy.
+
+### pnpm install fails
 ```bash
-pnpm --filter @workspace/api-spec run codegen
-pnpm run typecheck
+# Clear cache and retry
+pnpm store prune
+pnpm install
 ```
 
-**Peluang strategy kosong:**
-- Normal jika tidak ada pasar yang memenuhi semua filter saat ini
-- Sistem fallback ke data demo otomatis
-- Coba longgarkan filter di Settings (turunkan min probabilitas, naikkan max hari)
-
-**Telegram tidak terkirim:**
-- Pastikan kamu sudah kirim minimal satu pesan ke bot sebelum bot bisa membalas
-- Verifikasi Chat ID via endpoint `getUpdates`
-- Pastikan **Telegram Alerts** diaktifkan di Settings
-
-**Badge tetap DEMO padahal sudah set kredensial:**
-- Pastikan `POLYMARKET_PRIVATE_KEY` valid (hex, dengan atau tanpa prefix `0x`)
-- Restart API server setelah set Secrets baru
+### Rebuild after code changes
+```bash
+pnpm --filter @workspace/api-server run build
+```
 
 ---
 
 ## Tech Stack
 
-| Layer | Teknologi |
+| Layer | Technology |
 |---|---|
-| Frontend | React 19, Vite 7, Tailwind CSS v4, shadcn/ui, Recharts, wouter, TanStack Query v5 |
-| Backend | Node.js 20, Express 5, TypeScript, better-sqlite3, Pino (logger), esbuild |
-| Order signing | ethers.js v6 (EIP-712), HMAC-SHA256 (L2 auth) |
-| API contract | OpenAPI 3.1, Orval (codegen), Zod (validasi runtime) |
-| Package manager | pnpm workspaces (monorepo) |
-| Data | Polymarket Gamma API (publik), CLOB API (butuh kredensial) |
+| Backend | Express.js 5, TypeScript, esbuild |
+| Frontend | React 18, Vite 7, Tailwind CSS 4, shadcn/ui |
+| Database | SQLite via better-sqlite3 (Linux) or sql.js (Termux/fallback) |
+| Package manager | pnpm (monorepo) |
+| API schemas | Zod |
+| Charts | Recharts |
+| Notifications | Telegram Bot API |
+| Trading | Polymarket CLOB API (EIP-712 signed orders on Polygon) |
+
+---
+
+## License
+
+MIT
