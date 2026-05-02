@@ -16,10 +16,31 @@ success() { echo -e "${GREEN}[OK]${NC}    $*"; }
 warn()    { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 die()     { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
 
-# ─── Root check ──────────────────────────────────────────────────────────────
+# ─── Root check ───────────────────────────────────────────────────────────────
 [[ "$(id -u)" -eq 0 ]] && die "Do not run this script as root. Run as your normal user."
 
-# ─── Node.js ─────────────────────────────────────────────────────────────────
+# ─── Go ───────────────────────────────────────────────────────────────────────
+info "Checking Go..."
+if ! command -v go &>/dev/null; then
+  info "Go not found. Installing Go 1.23 (latest stable)..."
+  GO_VERSION="1.23.4"
+  GO_TARBALL="go${GO_VERSION}.linux-amd64.tar.gz"
+  curl -fsSL "https://go.dev/dl/${GO_TARBALL}" -o "/tmp/${GO_TARBALL}"
+  sudo rm -rf /usr/local/go
+  sudo tar -C /usr/local -xzf "/tmp/${GO_TARBALL}"
+  rm -f "/tmp/${GO_TARBALL}"
+  export PATH="$PATH:/usr/local/go/bin"
+  echo 'export PATH="$PATH:/usr/local/go/bin"' >> "$HOME/.bashrc"
+fi
+
+GO_VER=$(go version | awk '{print $3}' | sed 's/go//')
+GO_MAJOR=$(echo "$GO_VER" | cut -d. -f1)
+GO_MINOR=$(echo "$GO_VER" | cut -d. -f2)
+([[ "$GO_MAJOR" -gt 1 ]] || [[ "$GO_MAJOR" -eq 1 && "$GO_MINOR" -ge 21 ]]) \
+  || die "Go >= 1.21 required. Found: go$GO_VER. Install from https://go.dev/dl/"
+success "Go $GO_VER"
+
+# ─── Node.js ──────────────────────────────────────────────────────────────────
 info "Checking Node.js..."
 if ! command -v node &>/dev/null; then
   info "Node.js not found. Installing via NodeSource (LTS)..."
@@ -32,7 +53,7 @@ NODE_MAJOR=$(echo "$NODE_VER" | sed 's/v\([0-9]*\).*/\1/')
 [[ "$NODE_MAJOR" -ge 18 ]] || die "Node.js >= 18 required. Found: $NODE_VER. Update via https://nodejs.org"
 success "Node.js $NODE_VER"
 
-# ─── pnpm ────────────────────────────────────────────────────────────────────
+# ─── pnpm ─────────────────────────────────────────────────────────────────────
 info "Checking pnpm..."
 if ! command -v pnpm &>/dev/null; then
   info "Installing pnpm..."
@@ -40,40 +61,31 @@ if ! command -v pnpm &>/dev/null; then
 fi
 success "pnpm $(pnpm --version)"
 
-# ─── Build dependencies (better-sqlite3 needs Python + make) ─────────────────
-info "Ensuring build tools are present..."
-if command -v apt-get &>/dev/null; then
-  sudo apt-get install -y --no-install-recommends python3 make g++ 2>/dev/null || true
-elif command -v yum &>/dev/null; then
-  sudo yum install -y python3 make gcc-c++ 2>/dev/null || true
-elif command -v pacman &>/dev/null; then
-  sudo pacman -Sy --noconfirm python make gcc 2>/dev/null || true
-fi
+# ─── Build Go API server ──────────────────────────────────────────────────────
+info "Building Go API server..."
+mkdir -p artifacts/api-server
+(cd server && go build -o poly-server .)
+success "API server built (server/poly-server)"
 
-# ─── Install workspace dependencies ──────────────────────────────────────────
-info "Installing npm dependencies (this may take a minute)..."
+# ─── Install frontend dependencies ────────────────────────────────────────────
+info "Installing frontend dependencies..."
 pnpm install --frozen-lockfile 2>/dev/null || pnpm install
-success "Dependencies installed"
+success "Frontend dependencies installed"
 
-# ─── Build API server ────────────────────────────────────────────────────────
-info "Building API server..."
-pnpm --filter @workspace/api-server run build
-success "API server built"
-
-# ─── Create start script ─────────────────────────────────────────────────────
+# ─── Create start script ──────────────────────────────────────────────────────
 cat > start.sh << 'EOF'
 #!/usr/bin/env bash
-# Start PolyTrader (API server + frontend dev server)
+# Start PolyTrader (Go API server + frontend dev server)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 API_PORT="${PORT:-8080}"
 FRONTEND_PORT="${FRONTEND_PORT:-5000}"
 
-# Start API server
+# Start Go API server
 echo "[API] Starting on port $API_PORT..."
-cd "$ROOT/artifacts/api-server"
-PORT="$API_PORT" node --enable-source-maps ./dist/index.mjs &
+cd "$ROOT/server"
+DB_DIR="$ROOT/artifacts/api-server" PORT="$API_PORT" ./poly-server &
 API_PID=$!
 
 # Start frontend
