@@ -59,7 +59,7 @@ polytrader/
 ### Linux / VPS (Ubuntu, Debian, CentOS, Arch …)
 
 ```bash
-git clone <repo-url> polytrader
+git clone https://github.com/Unknown747/polytrader.git
 cd polytrader
 bash install-linux.sh
 ```
@@ -84,7 +84,7 @@ PORT=9090 FRONTEND_PORT=3000 bash start.sh
 ### Termux (Android)
 
 ```bash
-git clone <repo-url> polytrader
+git clone https://github.com/Unknown747/polytrader.git
 cd polytrader
 bash install-termux.sh
 ```
